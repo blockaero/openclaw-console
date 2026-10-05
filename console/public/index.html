@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenClaw console</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">OpenClaw console</p>
+      <h1>Context</h1>
+    </div>
+    <div class="header-actions">
+      <p class="banner">Fixture snapshot. ARM was not called. Proposals stay in this console.</p>
+      <button id="replay" type="button">Replay run</button>
+    </div>
+  </header>
+  <main>
+    <ol id="batches" class="batches"></ol>
+    <section class="stage" aria-live="polite">
+      <div class="pane">
+        <h2>Input</h2>
+        <pre id="input">Waiting for the run.</pre>
+      </div>
+      <div class="pane">
+        <h2>Output</h2>
+        <pre id="output">Output appears after each input.</pre>
+      </div>
+    </section>
+    <section class="proposals" id="proposals" hidden>
+      <h2>Proposed work items</h2>
+      <ol id="proposal-list"></ol>
+    </section>
+  </main>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
