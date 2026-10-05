@@ -1,10 +1,21 @@
 # OpenClaw read-only smoke test against ARM
 
-Status: plan only. This document does not change application code, OpenClaw config, the MSI Ops console, Neon, or ARM. No ARM or platform API was called while writing it.
+Status: plan only. Todd Siena approved the four gates on 2026-10-05. This document does not change application code, OpenClaw config, the MSI Ops console, Neon, or ARM. No ARM or platform API was called while writing it. The next step is minting the read-only key and building the harness. This pull request does not do either.
 
-The smoke test answers one question: can a basic read of records already in ARM be turned into local model output, with the call visible on the TV, without granting operating rights and without business writes.
+The smoke test answers one question: can a basic read of records already in ARM be turned into local model output, with the call visible on the TV, without granting operating rights and without business writes beyond the accepted presence lease and last-seen update.
 
-**Recommendation: option B.** Snapshot ARM to local JSONL with a new read-only pin and a client allow-list, then run the model step outside OpenClaw with tools disabled, through the MSI Ops console's existing capture function. Do not run option A on the live pin. Option C is the later program (B, then a constrained OpenClaw pass), not this smoke.
+**Recommendation: option B.** Snapshot each configured account to its own local JSONL with a dedicated read-only key and a client allow-list, then run the model step outside OpenClaw with tools disabled, through the MSI Ops console capture path. Option C is the later program (B, then a constrained OpenClaw pass). Option A stays off the live pin.
+
+## Decisions (approved 2026-10-05 by Todd Siena)
+
+These four were gates. They are closed. Later sections follow them.
+
+1. **Read-only key. APPROVED.** ARM can issue a dedicated read-only key (`armpin_` or equivalent) for the smoke. The key is never the live Americas pin in `~/.openclaw/openclaw.json` and never Todd's personal account. One key ref per account (see decision 4). The server envelope is still an allow-list of the named read tools. If `tools/list` advertises a mutator, that key is not the approved key and the run stops.
+2. **Presence lease and last-seen. APPROVED.** The presence lease and the last-seen update on every ARM call are an accepted soft write. The zero-writes attestation allow-lists exactly that change: the smoke principal's presence lease (`bot:<principal_id>`) and the last-seen (or equivalent) field on that same principal or credential. Every other write still fails the run, including business-row inserts, record `updated_at` changes, mark-read on a record, claims, COGS rows from `report_runtime_usage`, and audit rows that are not this lease.
+3. **Ops console. APPROVED.** The smoke's model calls may go through the MSI Ops console (`ollamaFetch` capture, TV Context batch view). This is an explicit, scoped exception to OpenClaw's standing rule "never touch the ops console." The exception covers only the smoke harness route. The live OpenClaw agent's model `baseUrl` stays `http://127.0.0.1:11434`. No deploy change and no edit to the live agent's model config.
+4. **Scope. APPROVED.** v1 runs the Americas account only. The harness does not hardcode Americas. Accounts come from a config list. Each entry is account id, label, and key ref (the environment-variable name, never the key). v1's list has one entry, the Americas account. Adding an account means adding a list entry and minting that account's read-only key. Each account gets its own snapshot file and its own result section. Pass/fail is per account, plus a rollup that passes only when every configured account passes.
+
+Path consequence of these approvals: build the option B harness. A and C are not this run.
 
 ## 1. How to read this plan
 
@@ -65,7 +76,7 @@ Soft-writes. The smoke **fails** if any of these are invoked:
 - `put_pulse_head`
 - `send_records_request`
 - `notify_user`
-- any `tools/call` at all, if Todd does not accept the presence lease (open question 3)
+- any ARM call whose only side effect is outside the approved allow-list (decision 2). The presence lease and the caller's last-seen update are allowed. A claim, a completion, a COGS insert, a proposal, or a record-field update is not.
 
 Hard banned:
 
@@ -124,13 +135,13 @@ Also noted there, and **out of this smoke**:
 
 **Not verified.** The notes mention posting to `/api/chat`, or adding `/api/ollama-proxy` or `/api/smoke/chat`, as options. Those paths are proposals. This plan does not treat them as existing routes.
 
-**Conflict, already called out in the notes.** Standing rule "never touch the ops console" versus any change that points OpenClaw at a console proxy. That is open question 7. Option B does not edit OpenClaw's model base URL. It still needs a console path that already calls `ollamaFetch`, or Todd's approval to add a smoke-only route that calls `ollamaFetch`.
+**Decision 3 closes the standing-rule conflict for this smoke.** The harness route may call `ollamaFetch` so the TV Context batch view shows the assembled context. The live OpenClaw agent stays on `http://127.0.0.1:11434`. The notes' `/api/chat`, `/api/ollama-proxy`, and `/api/smoke/chat` paths are still proposals, not verified routes. Building the harness includes confirming an existing console route that already calls `ollamaFetch`, or adding one route under this exception. That build is the next step after the key is minted. It is not part of this plan PR.
 
 ## 4. Options and recommendation
 
 ### A — OpenClaw with a deny-list
 
-A smoke-only OpenClaw profile would keep the ARM MCP server, refuse the soft-write and hard-banned names in its prompt or config, and (only if Todd approves question 7) send model traffic at a console proxy so the TV can see it.
+A smoke-only OpenClaw profile would keep the ARM MCP server, refuse the soft-write and hard-banned names in its prompt or config, and send model traffic at the console so the TV can see it. Decision 3 allows that capture path for the harness. It does not put the live agent on the console.
 
 Why this fails the read-only bar today:
 
@@ -140,17 +151,17 @@ Why this fails the read-only bar today:
 - **Verified on the MSI.** Shell, ADB, and browser skills exist beside ARM. Record text is untrusted. With tools enabled, injected instructions are not confined to ARM.
 - The live heartbeat (every 30 minutes, 06:00–20:00 PT) uses this same agent. A deny-list on a side profile does not stop the live agent from calling ARM during the test unless the live agent is quiesced.
 
-A is the right shape only after ARM issues a pin whose **server** envelope contains none of the soft-write or hard-banned tools, and after Todd accepts or eliminates the lease. It is not the first run.
+Decision 1 says ARM can issue a read-only key, and decision 2 accepts the lease. A is still not this run. The live agent has no hard deny-list, and shell, ADB, and browser skills stay loaded. The approved path is the harness.
 
 ### B — Snapshot harness, model step tools-disabled, console capture
 
 A one-shot program on the MSI, not the OpenClaw agent:
 
-1. Read ARM with a **new** pin that is not Todd's user and not the Americas agent pin.
-2. Write one local JSONL snapshot, then stop talking to ARM.
-3. Build prompts from that file only.
-4. Call the model with **no tools**, via the console's `ollamaFetch`, so the Context batch view on the TV shows the assembled context.
-5. Score the output locally against the snapshot. Do not post anything back to ARM. Do not call `report_runtime_usage`.
+1. For each account in the config list, read ARM with that account's read-only key. The key is never Todd's user and never the live pin in `openclaw.json`.
+2. Write that account's JSONL snapshot, then stop talking to ARM for that account.
+3. Build prompts from those files only.
+4. Call the model with **no tools**, via the console's `ollamaFetch`, so the Context batch view on the TV shows the assembled context. Decision 3.
+5. Score the output locally against the snapshot. Write per-account results and a rollup. Do not post anything back to ARM. Do not call `report_runtime_usage`.
 
 This does **not** by itself prove OpenClaw's MCP client. The result must say `openclaw_mcp_exercised: false`. Passing B is evidence about read scope, grounding, and capture. It is not operating rights for the agent.
 
@@ -167,34 +178,57 @@ The OpenClaw pass that is safe to add later:
 
 That pass checks whether OpenClaw will follow the smoke prompt on a fixed snapshot. It still does not prove live MCP reads.
 
-A live MCP pass (option A) waits on a server-side read-only envelope and on question 3. Folding A into the same run as B makes a write during A indistinguishable from the snapshot in a single attestation window. Do not combine them in one sitting.
+A live MCP pass (option A) is a later program. Folding A into the same run as B makes a write during A indistinguishable from the snapshot in a single attestation window. Keep them in separate sittings.
 
 ### Recommendation
 
-**Run B.** Preconditions in section 5 are gates, not suggestions. If a read-only pin cannot be minted, stop. Do not fall back to the Americas pin. If Todd rejects the presence lease, stop before `tools/call`; MCP cannot be the read path until a non-leasing read exists (none is verified). If Todd does not approve a console capture path, the snapshot and the local score can still be produced, and the TV criterion stays failed, so the overall result stays failed.
+**Build and run B.** Decisions 1–4 are approved. The next step is minting each configured account's read-only key and building the harness (section 5). If the minted key's `tools/list` advertises a mutator, stop. Do not fall back to the live pin or to Todd's account. The lease and last-seen update are allowed (decision 2). Any other write fails the run. Model calls go through the console harness route (decision 3). The live agent `baseUrl` stays `http://127.0.0.1:11434`.
 
-C is the follow-up program after B passes. A is not scheduled until the pin and the lease are settled.
+C is the follow-up program after B passes. A is not scheduled.
 
-## 5. Prerequisites
+## 5. Prerequisites and next step
 
-All of these happen before any ARM RPC. This plan does not perform them.
+Decisions 1–4 are recorded. This plan does not mint a key, build a harness, or call ARM.
 
-1. Todd answers at least questions 2, 3, 4, and 7 in section 10. Question 4 is answered **B** by this plan unless he overrides it.
-2. A dedicated smoke principal, not Todd's personal account and not "ARM Agent / block-aero-americas". Illustrative display name: `ARM smoke reader`. `can_approve` stays false. Short validity, the run window only.
-3. That principal's envelope is an **allow-list** of the named read tools in section 3. Precheck: `tools/list` on this pin. If any soft-write or hard-banned name is advertised, the pin is not read-only. Stop. Do not "just avoid calling them" on a full envelope.
-4. The pin value lives in an MSI environment variable for the harness process (`ARM_SMOKE_PIN` is the illustrative name). Mode `0600` if it is a file. It is not written into the live `openclaw.json`, the JSONL, the console ring notes, git, Slack, or email. It is not copied into this repo.
+**Next step:** mint the read-only key for each account in the config list, then build the harness that reads with those keys. v1's list has one entry (Americas). The harness code is a later change, not this pull request.
+
+Before any ARM RPC from that harness:
+
+1. Accounts config on the MSI, mode `0600`, outside git. Shape below. v1 contains the Americas account only. The harness loops the list. It does not branch on the label `Americas` or on any account id.
+2. Mint one dedicated read-only key per list entry (decision 1). Illustrative display name: `ARM smoke reader`. `can_approve` stays false. Short validity, the run window only. Store the secret in the environment variable named by that entry's `key_env`. Never write the secret into the config file, the live `openclaw.json`, the JSONL, the console ring notes, git, Slack, or email.
+3. Fingerprint check, without printing secrets: the value in `key_env` must differ from the live `mcp.servers.arm` pin and must not be Todd's personal credential. Mismatch means stop.
+4. The key's envelope is an **allow-list** of the named read tools in section 3. Precheck on the first run: `tools/list`. If any soft-write or hard-banned name is advertised, stop. **Live `tools/list` is still unverified** until that precheck runs.
 5. Live agent quiesced for the whole window, including the after-snapshot:
    - Take a copy of `openclaw.json` before touching it.
    - Disable `mcp.servers.arm` on the **live** profile, or otherwise prevent the 30-minute heartbeat from calling ARM.
    - Heartbeat window is 06:00–20:00 America/Los_Angeles. Quiesce even outside that window so a clock or config surprise cannot race the diff.
    - Do not edit the BOM heartbeat files as part of this smoke. Their `:8787` reference is a known stale pointer, not a fix-it item for this run.
-6. Console capture path:
-   - Preferred: an existing console route that already calls `ollamaFetch`, confirmed by reading the console source on the MSI.
-   - Otherwise: Todd explicitly waives "never touch the ops console" for one smoke-only route that calls `ollamaFetch`, forces an empty tool list, and returns the batch id. No other console or deploy change.
+   - Confirm the live model `baseUrl` is still `http://127.0.0.1:11434` after the run (decision 3).
+6. Console capture path, under decision 3 only:
+   - Confirm an existing console route that already calls `ollamaFetch`, or add one smoke harness route that calls `ollamaFetch`, forces an empty tool list, and returns the batch id.
+   - No other console or deploy change. Do not point the live agent at that route.
 7. A read-only Neon role on ARM-pooled, used only for the before/after queries in section 9. Not the application role. No `INSERT`, `UPDATE`, `DELETE`, or DDL. If that role does not exist, the zero-write attestation cannot pass.
-8. On the model host, record `ollama show` and `ollama ps` for `qwen3:14b`, `qwen3:8b`, `moondream`, and `deepseek-r1:14b`. The smoke sets `num_ctx` explicitly (section 7). It does not trust the model card as the served window.
-9. Disk on the MSI for the snapshot, outside the git checkout. Illustrative directory: `~/openclaw-smoke/runs/<utc>/`. Not synced.
-10. Todd accepts that the TV will show record text for whatever is sent, or the run uses a redacted sample and the result says `tv_content: redacted_sample`.
+8. On the model host, record `ollama show` and `ollama ps` for `qwen3:14b`, `qwen3:8b`, `moondream`, and `deepseek-r1:14b`. The smoke sets `num_ctx` explicitly (section 8). It does not trust the model card as the served window.
+9. Disk on the MSI for one snapshot directory per account, outside the git checkout. Illustrative root: `~/openclaw-smoke/runs/<utc>/`. Not synced.
+10. The TV will show record text for whatever the harness sends (decision 3). If the room should not see it, the run uses a redacted sample and the result says `tv_content: redacted_sample`.
+
+### Accounts config
+
+Illustrative. The file lives on the MSI. It is not added to this repo. v1 is the first object only. The second object shows how a later account is added. It is not in v1.
+
+```json
+{
+  "accounts": [
+    {
+      "account_id": "<americas-account-id>",
+      "label": "Americas",
+      "key_env": "ARM_SMOKE_PIN_AMERICAS"
+    }
+  ]
+}
+```
+
+`account_id` is the ARM account id. `label` is display text. `key_env` is the name of an environment variable. The harness resolves the key at runtime. Adding an account is a new object in `accounts` plus a new env var holding that account's own read-only key. No code branch per account.
 
 ## 6. Run order
 
@@ -202,16 +236,17 @@ One attestation window. No second ARM client in parallel (the live heartbeat mus
 
 | Step | Action | ARM writes expected |
 |---|---|---|
-| 0 | Prerequisites above. Backup `openclaw.json`. Quiesce live MCP. | None |
-| 1 | Before-image: row counts and timestamp checksums (section 9). Save the audit cursor if an audit table exists. | None (SQL `SELECT` only) |
-| 2 | MCP `initialize`, then `tools/list`, with the smoke pin. Save the raw tool list. Abort if the envelope is not read-only. | Possible presence lease. Count it. |
-| 3 | Allow-listed reads only, sequential, into `snapshot.jsonl`. Then no further ARM RPC. | One lease per `tools/call`, if Todd accepted question 3. Any other write fails the run. |
-| 4 | Mid-image: repeat step 1. Diff against the before-image. Abort the model step if the diff is not exactly the accepted lease rows. | None |
-| 5 | Choose the sample (section 7). Build prompts from the JSONL only. | None |
-| 6 | Model calls through console `ollamaFetch`, tools omitted. Cap volume so the ring keeps the run. | None |
-| 7 | Local hallucination check. Write `result.json`. | None |
-| 8 | After-image: repeat step 1. Diff the whole window. | None |
-| 9 | Kill switch (section 9), after the after-image so a pin revoke cannot land inside the diff. | Admin revoke of the smoke pin may audit; it is outside the window. |
+| 0 | **Next:** mint one read-only key per accounts-config entry (v1: Americas). Build the harness. Do not call ARM from this plan. | None from this document |
+| 1 | Backup `openclaw.json`. Quiesce live MCP. Confirm live `baseUrl` is `http://127.0.0.1:11434`. | None |
+| 2 | Before-image: row counts and timestamp checksums (section 9). Save the audit cursor if an audit table exists. Audit table name is still unverified. | None (SQL `SELECT` only) |
+| 3 | For each account, MCP `initialize`, then `tools/list`, with that account's key. Save the raw tool list. Abort that account if the envelope is not read-only. **`tools/list` has not been run yet.** | Presence lease and last-seen for that principal. Allowed (decision 2). |
+| 4 | Allow-listed reads only, sequential, into that account's `snapshot.jsonl`. Then no further ARM RPC for that account. | Same allowed soft write per call. Any other write fails the run. |
+| 5 | Mid-image: repeat step 2. Diff against the before-image. Abort the model step unless every delta is on the decision 2 allow-list. | None |
+| 6 | Choose the sample (section 8). Build prompts from the JSONL files only. | None |
+| 7 | Model calls through the smoke console route (`ollamaFetch`), tools omitted. Cap volume so the ring keeps the run. Live agent `baseUrl` unchanged. | None |
+| 8 | Local hallucination check. Write per-account result sections and the rollup. | None |
+| 9 | After-image: repeat step 2. Diff the whole window against the decision 2 allow-list. | None |
+| 10 | Kill switch (section 10), after the after-image so a key revoke cannot land inside the diff. | Admin revoke of the smoke keys may audit; it is outside the window. |
 
 Standing rule carried into the harness: the same error three times stops the run. No retry on 403. 403 is not treated as a transient miss (platform API keys behave this way; ARM MCP status codes were not re-verified, so 403 still means stop).
 
@@ -219,11 +254,11 @@ Standing rule carried into the harness: the same error three times stops the run
 
 ### Credential
 
-Never Todd's personal login. Never the live Americas `armpin_` already in `openclaw.json`.
+**Decision 1. APPROVED.** ARM can issue a dedicated read-only key per account. Never Todd's personal login. Never the live pin already in `openclaw.json` (today that pin is the full-envelope Americas agent).
 
 **Verified on the MSI.** That live pin is full envelope. Using it for the smoke would make "read-only" a client convention on a principal that is allowed to operate.
 
-**Assumed.** ARM can mint a second pin with a narrower envelope. That is open question 2. If the answer is no, B cannot touch MCP. A database export is a different test: it bypasses the envelope this smoke is supposed to respect, and it is not a substitute unless Todd explicitly redefines the test as "offline export, no MCP".
+The key is still unused. Minting it is the next step. Until `tools/list` runs against it, the envelope contents, argument names, and pagination fields stay unverified. A database export is not the read path.
 
 ### Which calls
 
@@ -247,7 +282,7 @@ Resource `arm://account/pulse` is the same pulse content if the server exposes i
 
 ### Scope of records
 
-Default scope, **assumed** until question 1 is answered: accounts visible to the Americas dogfood principal, not every account a broader pin could see. The smoke pin should be constrained to that same account set on the server, not by a prompt.
+**Decision 4. APPROVED.** v1 is the Americas account only, as the single entry in the accounts config. The smoke key for that entry is constrained to that account on the server. The harness does not hardcode the account. A later account is another config entry and another key, with its own snapshot and result section.
 
 v1 snapshot **includes** only payloads those allow-listed tools return.
 
@@ -272,7 +307,7 @@ v1 snapshot **excludes**, even if some other tool could see them:
 - One request in flight.
 - Page size is whatever the tool schema defaults. Do not send a larger page than the schema's maximum. If no maximum is advertised, send no size override on the first page and record what came back.
 - Follow a next cursor only if the response or the schema names one. Stop on an empty page, a repeated cursor, or a short page.
-- Hard caps for v1, **proposed** pending question 6: 10 pages per list tool, 200 records per tool, 32MB raw JSON for the whole snapshot. Pulse additionally stops at the **doc-derived** 256KB cap; store `truncated: true` when the body sits on that cap or the payload says it is partial.
+- Hard caps for v1, **proposed** (pass thresholds are still an open question): 10 pages per list tool, 200 records per tool, 32MB raw JSON per account snapshot. Pulse additionally stops at the **doc-derived** 256KB cap; store `truncated: true` when the body sits on that cap or the payload says it is partial. Pagination fields themselves are **not verified** until `tools/list` and the first page return.
 - Persist `next_cursor` and `etag` in the manifest when the server sends them, so a later run can resume. Do not delta-poll during this smoke.
 
 ### Rate limits
@@ -281,11 +316,11 @@ v1 snapshot **excludes**, even if some other tool could see them:
 
 ### Snapshot file
 
-Local JSONL, one JSON object per line, UTF-8, no BOM. Illustrative path: `~/openclaw-smoke/runs/2026-10-05T00-00-00Z/snapshot.jsonl`. Permissions `0600`. Not committed.
+Local JSONL, one JSON object per line, UTF-8, no BOM. One file per account. Illustrative path: `~/openclaw-smoke/runs/2026-10-05T00-00-00Z/<account_id>/snapshot.jsonl`. Permissions `0600`. Not committed. The directory name is the config `account_id`, not a hardcoded Americas path.
 
 Line kinds:
 
-- `manifest` — one line: run id, scope, smoke principal id (not the pin), allow-list, tool-list sha256, caps, started-at.
+- `manifest` — one line: run id, `account_id`, `label`, `key_env` (the variable name only), smoke principal id (not the key), allow-list, tool-list sha256, caps, started-at.
 - `tool_call` — one line per RPC: tool name, request arguments with secrets removed, response byte length, etag or cursor, `truncated`, duration. Payload omitted here when it is also stored as records.
 - `record` — one line per returned item: `source_tool`, `record_type` (set by the harness from the tool name, not by the model), `record_id` (server id, or a content hash if the payload has no id), `fetched_at`, `payload`.
 
@@ -310,9 +345,9 @@ Closed classification set, **proposed**: `certificate`, `back_to_birth`, `shop_v
 
 ### Sample, not the whole file
 
-**Proposed** v1 sample, pending question 6: up to 20 text records, at most two per `record_type`, preferring records that fit the input budget. Remaining snapshot rows are `not_sent_to_model`. They still count in snapshot totals.
+**Proposed** v1 sample (max records and wall time are still open): up to 20 text records per account, at most two per `record_type`, preferring records that fit the input budget. Remaining snapshot rows are `not_sent_to_model`. They still count in that account's snapshot totals.
 
-Rationale for the cap: the console ring holds **30** batches or about **20MB** (**verified on the MSI**). Twenty-five or fewer model calls leave headroom so the TV still has the run when it ends. More calls evict the early batches. The on-disk result remains complete either way; the TV criterion does not.
+Rationale for the cap: the console ring holds **30** batches or about **20MB** (**verified on the MSI**). The cap is shared across every account in the run. v1 has one account, so twenty-five or fewer model calls leave headroom and the TV still has the run when it ends. Adding accounts draws from the same ring unless the ring is raised. More calls evict the early batches. The on-disk result remains complete either way; the TV criterion does not.
 
 ### Chunking
 
@@ -339,7 +374,7 @@ Set `num_ctx` on the request. Do not inherit a laptop default.
 
 **Only for document page images.** It does not summarize JSON, and it does not receive a dumped record "for context."
 
-**Not verified:** whether any allow-listed read returns page image bytes. `record_blobs`, `ocr_artifacts`, `processed_files`, and `chat_attachment_cache` are candidate stores (**table names verified, contents not read**). If the snapshot contains no image bytes or image refs the smoke pin is allowed to fetch, skip Moondream and set `moondream: skipped_no_images`. That skips cleanly. It does not fail a text-only run unless Todd makes images mandatory (question 5).
+**Not verified:** whether any allow-listed read returns page image bytes. `record_blobs`, `ocr_artifacts`, `processed_files`, and `chat_attachment_cache` are candidate stores (**table names verified, contents not read**). If the snapshot contains no image bytes or image refs the smoke key is allowed to fetch, skip Moondream and set `moondream: skipped_no_images`. That skips cleanly. Whether v1 requires images at all is still an open question. The default is to skip.
 
 When an image is sent:
 
@@ -385,17 +420,17 @@ Image variant system line replaces the summary task with transcription. No `<rec
 
 **Verified on the MSI.** A client that calls `127.0.0.1:11434` itself will not show on the TV. `ollamaFetch` only sees calls the console makes.
 
-Required shape, once question 7 is answered:
+**Decision 3. APPROVED.** Required shape for the smoke harness route only:
 
 - The harness sends the prompt to the console route that calls `ollamaFetch`.
 - The console route does not attach tools and does not forward a tools array from the client.
 - The response includes the batch id, model name, `prompt_eval_count`, `eval_count`, and timings.
-- The harness stores that batch id on the result row.
+- The harness stores that batch id on the result row for that account.
 - The Context batch view at the console's batch route is how a person confirms the TV. The plan does not assume a person sat in front of the TV; `tv_capture` passes only when every text call has a batch id that `GET` on the batch route still returns at the end of the run.
 
-If that route does not exist and Todd does not approve adding it, skip step 6's TV requirement only in the sense that calls must not silently go to Ollama and be described as captured. Either capture is real, or `tv_capture` is `fail`.
+The route may not exist yet. Building it is part of the harness, inside the decision 3 exception. Until it exists, calls must not go straight to Ollama and be described as captured. `tv_capture` is `fail` unless the batch id is real.
 
-Do not change the live agent's Ollama base URL. Option A's "point OpenClaw at the proxy" is out of this run.
+The live agent's Ollama `baseUrl` stays `http://127.0.0.1:11434`. Pointing that agent at the console is outside the exception.
 
 Ring: stay at or under 25 batches and watch the 20MB cap when images are included. A dropped batch fails `tv_capture` for that call.
 
@@ -403,7 +438,7 @@ Ring: stay at or under 25 batches and watch the 20MB cap when images are include
 
 ### Schema
 
-File: `~/openclaw-smoke/runs/<utc>/result.json`. Sibling of the snapshot. Not committed. Example values in the next section are **illustrative**.
+File: `~/openclaw-smoke/runs/<utc>/result.json`. One file for the run. Per-account sections sit beside the per-account snapshot directories. Not committed. Example values in the next section are **illustrative**.
 
 ```text
 result
@@ -411,76 +446,86 @@ result
   run_id                    string (UTC timestamp id)
   option                    "B"
   openclaw_mcp_exercised    false
+  decisions                 "approved-2026-10-05"
   labels
     verified_on_msi         string[]   facts the run re-checked
-    not_verified            string[]   gaps left open
-  scope
-    account_scope           "americas-dogfood" | "all-visible" | "other"
+    not_verified            string[]   gaps still open (tools/list, pagination, audit table)
+  accounts[]                          one element per config entry, in config order
+    account_id              string     from config, not a hardcoded name
+    label                   string
+    key_env                 string     env var name only
     pin_principal_id        string
-    live_americas_pin_used  false
-  snapshot
-    path                    string
-    sha256                  string
-    bytes                   number
-    tool_calls              { tool, count, truncated }[]
-    records_by_type         { [record_type]: number }
-    caps                    { max_pages, max_records_per_tool, max_bytes }
-  coverage
-    mcp_records             number
-    sent_to_model           number
-    scored                  number
-    skipped_not_sent        number
-    skipped_truncated_context number
-    coverage_of_sample_pct  number     scored / sent_to_model
-    coverage_of_snapshot_pct number    scored / mcp_records
-    neon_table_counts       { [table]: number }   counts only, from the before-image
-    mcp_vs_table_note       string     gap between MCP-visible rows and table counts
-  records[]
-    record_id, record_type, source_tool
-    model, batch_id, num_ctx
-    summary, classification, missing_fields, anomalies, cited_fields
-    hallucination
-      pass                  bool
-      unsupported_citations { path, model_value }[]
-      false_missing         string[]
-      identifiers_not_in_source string[]
-    latency_ms, prompt_tokens, completion_tokens
-    tv_batch_still_present  bool
-  moondream
-    status                  "skipped_no_images" | "ran" | "not_requested"
-    pages                   number
-  tokens
-    prompt_total, completion_total
-  latency_ms
-    arm_read_total, model_total, wall_total
-  zero_writes
+    live_operator_pin_used  false      true fails the account
+    snapshot
+      path, sha256, bytes
+      tool_calls            { tool, count, truncated }[]
+      records_by_type       { [record_type]: number }
+      caps                  { max_pages, max_records_per_tool, max_bytes }
+    coverage
+      mcp_records, sent_to_model, scored
+      skipped_not_sent, skipped_truncated_context
+      coverage_of_sample_pct          scored / sent_to_model
+      coverage_of_snapshot_pct        scored / mcp_records
+    records[]
+      record_id, record_type, source_tool
+      model, batch_id, num_ctx
+      summary, classification, missing_fields, anomalies, cited_fields
+      hallucination
+        pass                bool
+        unsupported_citations { path, model_value }[]
+        false_missing       string[]
+        identifiers_not_in_source string[]
+      latency_ms, prompt_tokens, completion_tokens
+      tv_batch_still_present bool
+    moondream
+      status                "skipped_no_images" | "ran" | "not_requested"
+      pages                 number
+    tokens                  prompt_total, completion_total
+    latency_ms              arm_read_total, model_total
+    pass                    bool
+    fail_reasons            string[]
+  neon_table_counts         { [table]: number }   run-level, counts only
+  mcp_vs_table_note         string
+  zero_writes                           run-level; the database is shared
     window                  { started_at, ended_at }
     sql_role                "read-only"
+    allowed_soft_writes               decision 2, nothing else
+      - class: presence_lease
+        principal_id, key "bot:<principal_id>"
+        expected_calls, observed_count, table
+      - class: last_seen
+        principal_id
+        table, column          column name discovered at run time
+        rows_touched
     tables[]
       name, row_count_before, row_count_after
       checksum_before, checksum_after, checksum_column
     unexpected_deltas       { table, what_changed }[]
     audit
-      table                 string | null
+      table                 string | null     name still unverified
       new_rows              number
       status                "clean" | "changed" | "table_not_found"
-    presence_leases
-      accepted              bool
-      expected_tool_calls   number
-      observed              { table, key, count }[]
     forbidden_tools_invoked string[]
     report_runtime_usage_called false
     pass                    bool
+  latency_ms                wall_total
   tv_capture                "pass" | "fail"
-  pass                      bool
+  rollup
+    accounts_configured     number
+    accounts_passed         number
+    accounts_failed         number
+    pass                    bool       true only when every account passed and zero_writes.pass and tv_capture is pass
+  pass                      bool       same as rollup.pass
   fail_reasons              string[]
 ```
 
 Checksum, **proposed** because column names are **assumed**: for each table, read `information_schema.columns` first. If a timestamp column exists (`updated_at`, else `updated_on`, else `modified_at`), checksum is a hash of `id` concatenated with that timestamp, ordered by `id`. If there is no stable id, checksum is `count(*)` plus a hash of the whole row only when the table is small enough that the read-only role can scan it without a timeout; otherwise record `checksum: unavailable` and the zero-write check **cannot pass** for that table. Do not guess a column.
 
-Audit table: not in the verified table list. Step 1 looks for a table whose name contains `audit`. If none exists, `audit.status` is `table_not_found`. Overall pass then depends on question 6: this plan's default is that a missing audit table **fails** the attestation only when any lease or delta is unexplained. Clean row-count and checksum diffs with `table_not_found` stay a gap in `not_verified`, and they fail the run if Todd required an audit log (he did, in the brief). Default here: **fail closed** when the audit table cannot be named. Finding the table is a prerequisite, not a mid-run surprise, so step 1 of a real run should be preceded by a one-time catalog read. If that catalog read finds nothing, do not start step 3.
+A last-seen column on the smoke principal is not part of that business checksum failure. Decision 2 pulls it out of `unexpected_deltas` and records it under `allowed_soft_writes`. A timestamp move on a record, work item, or other business row stays unexpected.
 
-Presence lease hypothesis, **assumed**: the row may show up in `chat_run_leases` or `account_runtime_status`. The diff does not whitelist those tables in advance. It lists every table that moved. Todd's answer to question 3 decides whether a lease-shaped delta is the only acceptable move. Any other move fails.
+Audit table: **not verified.** It is not in the MSI table list. The before-image looks for a table whose name contains `audit`. If none exists, `audit.status` is `table_not_found`. Default remains **fail closed** when the audit table cannot be named, because the original brief asked for an audit-log check and Todd has not waived that. Whether a missing audit table fails the run is still an open question only in the sense that he has not confirmed the table. Until he waives it, the harness fail-closes. Finding the name is a catalog read during harness bring-up, before snapshot reads. If that catalog read finds nothing, do not start the account reads.
+
+Presence lease and last-seen, **decision 2 APPROVED.** The change class is allowed. The table and column names are still **assumed**: the lease row may show up in `chat_run_leases` or `account_runtime_status`, and the last-seen column may be named `last_seen` or similar. The diff lists every table that moved. A delta is allowed only when it is the smoke principal's lease key `bot:<principal_id>`, or the last-seen field on that same principal or credential, and the counts match the ARM calls for the accounts in this run. A mark-read on a record, a business `updated_at`, or any other column fails. The allow-list is that class, not "whatever moved."
 
 ### Hallucination check
 
@@ -497,26 +542,28 @@ Deterministic, local, no second model:
 
 ### Pass / fail
 
-**Proposed** thresholds, pending question 6.
+Per account, then a rollup. Max records and max wall time are still **proposed**, not set by Todd: 20 model calls per account, shared ring cap of 25 calls per run, wall time under 45 minutes for v1's single account.
 
-The run **passes** only when every line below is true:
+An account **passes** only when every line below is true for that account:
 
-1. `live_americas_pin_used` is false and `option` is `B`.
+1. `live_operator_pin_used` is false. The key is the minted read-only key for that `account_id`, not the live pin and not Todd's account (decision 1). `option` is `B`.
 2. `forbidden_tools_invoked` is empty. `report_runtime_usage_called` is false.
 3. No work item was claimed. If one was, do not call `complete_work_item` to "clean up". Stop and tell Todd. The claim lease TTL is 30 minutes (**doc-derived**). Completing it would be a second write.
-4. Zero-write attestation passes: no unexpected table deltas. Presence leases are either absent, or equal to the number of `tools/call`s and explicitly accepted.
-5. Audit status is `clean`, or Todd has waived a missing audit table in writing. Default is no waiver.
-6. `coverage_of_sample_pct` is 100 for the records that were sent (every sent record scored, none truncated). Snapshot coverage is reported and is **not** required to be 100, because the sample is capped.
-7. Every scored record has `hallucination.pass` true.
-8. `tv_capture` is `pass`: each text model call still has its batch on the console at the end.
-9. Every model endpoint recorded is the local console route. No other host.
-10. PII exclusions in section 7 were kept: those table names do not appear as `source_tool` payloads' dumped tables, and the snapshot was not copied off the MSI.
-11. The same error did not occur three times.
-12. `openclaw_mcp_exercised` is false. A pass must not be readable as "OpenClaw may now operate."
+4. That account's sample `coverage_of_sample_pct` is 100 (every sent record scored, none truncated). Snapshot coverage is reported and is not required to be 100, because the sample is capped.
+5. Every scored record has `hallucination.pass` true.
+6. PII exclusions were kept for that snapshot.
 
-The run **fails** if any gate fails. Partial model output can still be saved. `pass` stays false.
+The run **rollup passes** only when every configured account passes and all of the following are true:
 
-Illustrative numbers that are **not** targets until Todd sets them: wall time under 45 minutes, fewer than 200 ARM records, at most 20 model calls.
+1. Zero-writes passes. Deltas are empty except the decision 2 allow-list: presence lease `bot:<principal_id>` and the last-seen field for each smoke principal in this run, with counts matching that account's ARM calls. Any other write fails.
+2. Audit status is `clean`, or Todd has waived a missing audit table in writing. Default is no waiver. The audit table name is still unverified.
+3. `tv_capture` is `pass`: each text model call still has its batch on the console at the end.
+4. Every model endpoint recorded is the smoke console route. The live agent `baseUrl` is still `http://127.0.0.1:11434`.
+5. The same error did not occur three times.
+6. `openclaw_mcp_exercised` is false. A pass must not be readable as "OpenClaw may now operate."
+7. `accounts_configured` equals the config list length. v1 that length is 1. A hardcoded Americas-only code path fails review even when the list has one entry.
+
+The run **fails** if any account fails or the rollup checks fail. Partial model output can still be saved. `pass` stays false.
 
 ### Example layout
 
@@ -528,59 +575,89 @@ Illustrative. These are not ARM records.
   "run_id": "2026-10-05T18-00-00Z",
   "option": "B",
   "openclaw_mcp_exercised": false,
-  "scope": {
-    "account_scope": "americas-dogfood",
-    "pin_principal_id": "principal_example",
-    "live_americas_pin_used": false
-  },
-  "snapshot": {
-    "sha256": "example",
-    "bytes": 120000,
-    "records_by_type": { "work_item": 2, "project_status": 1, "account_pulse": 1 }
-  },
-  "coverage": {
-    "mcp_records": 4,
-    "sent_to_model": 3,
-    "scored": 3,
-    "skipped_not_sent": 1,
-    "coverage_of_sample_pct": 100,
-    "coverage_of_snapshot_pct": 75,
-    "neon_table_counts": { "btb_events": 0, "agent_work_items": 0 }
-  },
-  "records": [
+  "decisions": "approved-2026-10-05",
+  "accounts": [
     {
-      "record_id": "example-work-item-1",
-      "record_type": "work_item",
-      "source_tool": "list_work_items",
-      "model": "qwen3:14b",
-      "batch_id": "batch_example",
-      "summary": "Example summary that only restates fields inside the snapshot payload.",
-      "classification": "work_item",
-      "missing_fields": ["example_field"],
-      "anomalies": [],
-      "hallucination": { "pass": true, "unsupported_citations": [], "false_missing": [], "identifiers_not_in_source": [] },
-      "latency_ms": 800,
-      "prompt_tokens": 400,
-      "completion_tokens": 120,
-      "tv_batch_still_present": true
+      "account_id": "acct_example",
+      "label": "Americas",
+      "key_env": "ARM_SMOKE_PIN_AMERICAS",
+      "pin_principal_id": "principal_example",
+      "live_operator_pin_used": false,
+      "snapshot": {
+        "path": "~/openclaw-smoke/runs/2026-10-05T18-00-00Z/acct_example/snapshot.jsonl",
+        "sha256": "example",
+        "bytes": 120000,
+        "records_by_type": { "work_item": 2, "project_status": 1, "account_pulse": 1 }
+      },
+      "coverage": {
+        "mcp_records": 4,
+        "sent_to_model": 3,
+        "scored": 3,
+        "skipped_not_sent": 1,
+        "coverage_of_sample_pct": 100,
+        "coverage_of_snapshot_pct": 75
+      },
+      "records": [
+        {
+          "record_id": "example-work-item-1",
+          "record_type": "work_item",
+          "source_tool": "list_work_items",
+          "model": "qwen3:14b",
+          "batch_id": "batch_example",
+          "summary": "Example summary that only restates fields inside the snapshot payload.",
+          "classification": "work_item",
+          "missing_fields": ["example_field"],
+          "anomalies": [],
+          "hallucination": { "pass": true, "unsupported_citations": [], "false_missing": [], "identifiers_not_in_source": [] },
+          "latency_ms": 800,
+          "prompt_tokens": 400,
+          "completion_tokens": 120,
+          "tv_batch_still_present": true
+        }
+      ],
+      "moondream": { "status": "skipped_no_images", "pages": 0 },
+      "pass": true,
+      "fail_reasons": []
     }
   ],
-  "moondream": { "status": "skipped_no_images", "pages": 0 },
+  "neon_table_counts": { "btb_events": 0, "agent_work_items": 0 },
   "zero_writes": {
+    "allowed_soft_writes": [
+      {
+        "class": "presence_lease",
+        "principal_id": "principal_example",
+        "key": "bot:principal_example",
+        "expected_calls": 4,
+        "observed_count": 4,
+        "table": "chat_run_leases"
+      },
+      {
+        "class": "last_seen",
+        "principal_id": "principal_example",
+        "table": "principals",
+        "column": "last_seen",
+        "rows_touched": 1
+      }
+    ],
     "unexpected_deltas": [],
     "audit": { "table": null, "status": "table_not_found", "new_rows": 0 },
-    "presence_leases": { "accepted": false, "expected_tool_calls": 0, "observed": [] },
     "forbidden_tools_invoked": [],
     "report_runtime_usage_called": false,
     "pass": false
   },
   "tv_capture": "pass",
+  "rollup": {
+    "accounts_configured": 1,
+    "accounts_passed": 1,
+    "accounts_failed": 0,
+    "pass": false
+  },
   "pass": false,
   "fail_reasons": ["illustrative: audit table was not named, so zero_writes.pass is false"]
 }
 ```
 
-The example is a **fail** on purpose: a missing audit table fails closed. A real pass needs `zero_writes.pass` true and `fail_reasons` empty.
+The example is a **fail** on purpose. The account section passes, and the lease plus last-seen are on the decision 2 allow-list (table and column names here are illustrative, not verified). The rollup fails because the audit table name is still unknown. A real pass needs `zero_writes.pass` true, `rollup.pass` true, and `fail_reasons` empty. The label `Americas` is config data for v1's one entry. The harness does not branch on it. `acct_example` stands in for the real account id.
 
 ## 10. Risks and gaps
 
@@ -594,13 +671,15 @@ The smoke pin is an allow-list on the server. The harness copies that as a secon
 
 **Verified on the MSI.** Any `tools/call` heartbeats `bot:<principal_id>`.
 
-**Not verified, treat as possible until the diff says otherwise.** A read might also update last-seen, insert an audit row, or mark a briefing read. `get_briefing(if_version)` and pulse etag/delta are the likely places. The mid-image diff is there to catch them. If a "read" moves any column outside the accepted lease, the smoke fails and that tool is removed from the allow-list before any retry.
+**Decision 2. APPROVED.** That lease, and the last-seen update on the same principal or credential, are the only soft writes the attestation allows. Counts must match the calls made for the principals in the accounts config.
+
+**Still unverified:** which table and column hold the lease and last-seen, and whether a read also mark-reads a briefing or moves a record timestamp. `get_briefing(if_version)` and pulse etag/delta are the likely places for an extra write. The mid-image diff classifies each delta. A mark-read, an audit insert that is not the lease, or any business-column change fails the run, and that tool comes off the allow-list before any retry.
 
 **Doc-derived.** `report_runtime_usage` writes a COGS row when tokens are greater than zero. Token totals stay in `result.json` only.
 
 ### Pin scope
 
-The live Americas pin is the wrong credential. A smoke that "uses OpenClaw as it is configured" would be using operating rights to test whether operating rights are safe. The new pin is a different principal so lease rows are attributable. Server-side account scope should match Americas dogfood (question 1), so a client filter is not the only thing keeping other tenants out.
+**Decision 1 and 4. APPROVED.** The live pin in `openclaw.json` is the wrong credential. A smoke that uses OpenClaw as it is configured would be using operating rights to test whether operating rights are safe. Each config entry gets its own read-only key and its own principal, so lease rows are attributable. v1's server-side scope is the Americas account. The client loops the config list and does not hardcode that account, so a second account is a new list entry rather than a code change.
 
 ### Prompt injection from record content
 
@@ -637,7 +716,7 @@ Three views, all reads:
 2. Timestamp checksums where a timestamp column exists.
 3. Audit log, once its table is identified.
 
-Diff at mid-image (after reads, before models) and after-image (after models). Model calls must not change the diff. If they do, something other than the harness is still connected, or a model call reached ARM. Both fail the run.
+Diff at mid-image (after reads, before models) and after-image (after models). Classify each delta against decision 2. Model calls must not add a delta. If they do, something other than the harness is still connected, or a model call reached ARM. Both fail the run.
 
 `count(*)` on large tables is still a read. It can be heavy. Cap it with a statement timeout. A timeout means that table is `checksum: unavailable`, and zero-writes cannot pass until the query is narrowed. Do not switch to the application role to "make it faster."
 
@@ -646,7 +725,7 @@ Diff at mid-image (after reads, before models) and after-image (after models). M
 Order, after the after-image:
 
 1. Stop the harness process. Confirm it is gone. No more MCP or model calls.
-2. Revoke the smoke pin in ARM. That is an administrative action by Todd or an admin, outside the attestation window.
+2. Revoke each smoke key minted for this run. That is an administrative action by Todd or an admin, outside the attestation window. Leave the live Americas pin in place.
 3. Restore the live `openclaw.json` from the backup made in prerequisites, if it was edited to disconnect MCP. Confirm the model base URL is still `http://127.0.0.1:11434` and was never pointed at the console.
 4. Leave the heartbeat files alone (BOM and port 8787 are pre-existing).
 5. Re-enable the live agent only when Todd says so. The smoke does not turn it back on as part of cleanup.
@@ -662,22 +741,19 @@ If a claim was accidentally taken, the kill switch does **not** complete the wor
 - Pagination, rate limits, image-returning tools, audit table name, and timestamp column names remain unverified.
 - B does not exercise OpenClaw. Passing it must not be used to grant the live agent write tools.
 
-## 11. Open questions for Todd
+## 11. Open questions
 
-1. Americas dogfood only, or every account the pin can see? This plan assumes Americas dogfood, enforced on the smoke pin.
-2. Can ARM mint a read-only pin (server allow-list of the named read tools, no mutators), or is the only safe path an offline export that does not use MCP? If the latter, say so; this plan stops rather than reuse the live pin.
-3. Is the presence-lease heartbeat an acceptable soft write if it is the only delta and it matches `tools/call` count? If no, MCP `tools/call` cannot be the read path.
-4. A, B, or C? This plan recommends **B**, with C as a later profile that only sees the JSONL, and A only after questions 2 and 3 are yes.
-5. Moondream on document page images in v1, or text-only Qwen? This plan runs Moondream only when the snapshot already contains a page image the pin is allowed to fetch; otherwise it skips.
-6. Pass criteria: which tools and tables, max records, max wall time, and whether a missing audit table fails the run? This plan fail-closes on the audit table, caps the model sample at 20 calls so the TV ring can hold them, and does not require full-table coverage.
-7. May the smoke add or use a console route that calls `ollamaFetch`, given the standing rule never to touch the ops console? Without that, `tv_capture` cannot pass. The live OpenClaw base URL stays on `127.0.0.1:11434` either way.
+Resolved on 2026-10-05 by Todd Siena and removed from this list: the read-only key (decision 1), the presence lease and last-seen soft write (decision 2), the scoped ops-console exception (decision 3), and Americas-only v1 with a config-driven account list (decision 4). The path those decisions select is the option B harness. A/B/C is not an open choice for this run.
 
-Further questions this pass turned up:
+Still open, and still unverified where noted:
 
-8. What is the audit table name, if any?
-9. Which MCP tool, if any, returns BTB, certificate, and document-page bodies? The named reads may only cover briefing, pulse, and work items.
-10. Is `127.0.0.1:11434` on the MSI the RTX Ollama or a forwarder?
-11. Should `chat_messages` be excluded for v1 (this plan excludes them)?
+1. Moondream on document page images in v1, or text-only Qwen? The plan runs Moondream only when that account's snapshot already contains a page image the key may fetch. Otherwise it skips. Whether a skip fails v1 is unanswered.
+2. Pass thresholds Todd has not set: max records, max wall time, and a written waiver if the audit table cannot be found. The plan fail-closes on a missing audit table, caps the model sample at 20 calls per account and 25 per run so the TV ring can hold them, and does not require full-table coverage.
+3. **Unverified.** Audit table name. It is not in the MSI table list.
+4. **Unverified.** Live `tools/list` was not run. Argument names, pagination cursors, rate limits, and whether `registry_insights` is the exact tool name are unknown until the harness precheck.
+5. **Unverified.** Which MCP tool, if any, returns BTB, certificate, and document-page bodies? The named reads may only cover briefing, pulse, and work items.
+6. **Unverified.** Is `127.0.0.1:11434` on the MSI the RTX Ollama or a forwarder?
+7. Should `chat_messages` stay excluded for v1? The plan excludes them.
 
 ## 12. Non-goals
 
