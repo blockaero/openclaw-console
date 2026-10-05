@@ -1,6 +1,6 @@
 # OpenClaw read-only smoke test against ARM
 
-Status: plan only. Todd Siena approved the four gates on 2026-10-05. This document does not change application code, OpenClaw config, the MSI Ops console, Neon, or ARM. No ARM or platform API was called while writing it. The next step is minting the read-only key and building the harness. This pull request does not do either.
+Status: plan only. Todd Siena approved the four gates on 2026-10-05. This document does not change application code, OpenClaw config, the MSI Ops console, Neon, or ARM. No ARM or platform API was called while writing it, and `tools/list` was not called. Minting a key is blocked until ARM has a real read-only role or level (section 2b). This pull request does not mint a key and does not make that server change.
 
 The smoke test answers one question: can a basic read of records already in ARM be turned into local model output, with the call visible on the TV, without granting operating rights and without business writes beyond the accepted presence lease and last-seen update.
 
@@ -26,6 +26,7 @@ Three labels are used on every factual claim:
 | **Verified in this repo** | Seen in `blockaero/openclaw-console` during this writing. |
 | **Verified on the MSI** | Stated as verified in Todd's discovery notes, MSI `DESKTOP-3CKU4OO`, 2026-10-05. Secrets were already redacted there. This plan did not re-open the laptop, `openclaw.json`, or Neon. |
 | **Doc-derived** | Tool classification and resource behavior from those notes, taken from docs. Live `tools/list` was not run, because it needs the pin and may heartbeat a presence lease. |
+| **Reported, not verified here** | From Todd's 2026-10-05 read-only review of `github.com/Block-Aero/block-aero-ai-records-manager`. This session got HTTP 404 for that repo from both `gh` and the GitHub API, so no line citations. | <!-- pragma: allowlist secret -->
 | **Assumed** | Planning inference. Not confirmed. |
 | **Published model card** | Public Ollama / Hugging Face figures. Not measured on the RTX or MSI Ollama. |
 
@@ -81,7 +82,7 @@ ARM's own vision path is Claude Sonnet, not local Ollama. A smoke read that caus
 
 On that account, principals of `kind=bot`: one **active** row, `prin_8db350b5a8df48e9b17ff766bf303405`, display name `ARM Agent v0.184.0`, `runtime=grok`, `autonomy_level=L3`. Four other bots are `revoked` (display names `Records Manager`, `Records Manager v0.156.0`, `Records Manager v0.158.1`, `ARM Agent v0.171.0`), also `runtime=grok`. Five active `kind=human` principals exist; their emails were not read.
 
-This does not match the MSI note's agent name `"ARM Agent / block-aero-americas"` one-for-one, and the database runtime is `grok`, not OpenClaw. Server version `0.185.10` is also ahead of the active bot's `v0.184.0` label. The smoke key is a new principal. It does not reuse `prin_8db350b5a8df48e9b17ff766bf303405`. What `L3` permits is still unknown, because that enum is not defined in source here.
+This does not match the MSI note's agent name `"ARM Agent / block-aero-americas"` one-for-one, and the database runtime is `grok`, not OpenClaw. Server version `0.185.10` is also ahead of the active bot's `v0.184.0` label. The smoke key is a new principal. It does not reuse `prin_8db350b5a8df48e9b17ff766bf303405`. What `L3` permits was not read from source here. The reported contract (section 2b) says even L0 can claim, complete, post, and set the pulse head, so this active L3 bot is not a read-only principal.
 
 `factory_jobs.mcp_smoke_tools` exists (`jsonb`) but no row had a non-null value, so a previous factory smoke did not leave a tool list to copy. `tools/list` is still unverified.
 
@@ -126,6 +127,63 @@ So a page image for Moondream is not in Postgres. Fetching `gcs_uri` would leave
 
 None of this names the MCP tool that returns a BTB row or a certificate. Those tables exist. The tool list does not, until `tools/list` on the smoke key.
 
+## 2b. Reported ARM source (not verified in this session)
+
+Todd pointed at the private repo `github.com/Block-Aero/block-aero-ai-records-manager` (org `Block-Aero` with a hyphen). On 2026-10-05 this session requested that repo and `app/principal_envelope.py`. Both the `gh` CLI and the GitHub API returned **404**. No file from that repo was read. Nothing below is a line citation. Treat it as **reported, not verified here** until someone with access quotes the file. <!-- pragma: allowlist secret -->
+
+Reported files, unread here:
+
+- `app/principal_envelope.py` — formal tool contract
+- `app/routers/mcp.py` — MCP HTTP surface; the initialize path was not checked
+- `app/openclaw_mcp_gateway.py` — reported default port **8788**
+- `deploy/AGENT_RUNTIME.md` — reported: MCP `initialize` may update `principals.last_briefing_*`
+- `deploy/GROK_RM_SKILL.md`
+- `deploy/ARM_RM_HEARTBEAT.md`
+- `AGENT_AUTONOMY_PLAN.md`
+
+Reported contract shape:
+
+- Allowed tools are the role (Records Manager, Account Manager, business development, supply chain) narrowed by autonomy **L0–L4**.
+- Ledger tools stay closed to bots.
+- `tools/list` shows only tools that bot can call.
+- An unknown level is treated as **L0**.
+- There is **no read-only role and no read-only level**. A search in that review found **no per-key scope**.
+- Even **L0** includes claiming work, completing work, posting messages, and setting the pulse head.
+- Runtime-usage reporting is allowed at **every** level.
+
+The v1 call list in section 3 was **not** rebuilt from `principal_envelope.py`, because that file was not readable. Those names stay doc-derived. They are not the envelope. A key minted from today's L0 would still advertise write tools, and the plan's precheck ("stop if `tools/list` shows a mutator") would fail it. That is a blocker, not a reason to weaken the precheck.
+
+### Blocker before any key is minted
+
+**Prerequisite, not done.** ARM needs a read-only role or level, or real per-key scopes, before a smoke key is minted. Decision 1 still stands: the key must be dedicated, not the live Americas pin, and not Todd's account. Decision 1 does not mean today's L0 is that key. Do not mint until `tools/list` for the new level would omit claim, complete, post-message, put-pulse-head, and runtime-usage reporting.
+
+**Recommendation only. This PR does not change ARM.** Smallest server change that matches the reported contract:
+
+- Add a bot level or role that is not an alias of L0. Illustrative name: `read_only`.
+- Put it in `app/principal_envelope.py` so `tools/list` returns only tools that do not write, and omits claim, complete, post message, put pulse head, and runtime-usage reporting.
+- Keep ledger tools closed to bots. Keep "unknown level means L0", so a missing level does not silently become read-only.
+- In `app/routers/mcp.py`, skip any `principals.last_briefing_*` write on `initialize` for that level. Whether Todd wants that skip, or an exception to decision 2, is an open question. This plan does not edit decision 2.
+- Do not rely on per-key scopes until they exist. The reported search found none.
+
+### Initialize versus decision 2
+
+**Reported, not verified here** (`deploy/AGENT_RUNTIME.md`; `mcp.py` was not opened). The MCP `initialize` handshake may update `principals.last_briefing_*`. Those columns are outside decision 2. The run order's first ARM call is `initialize`. Until Todd answers the open question in section 11, do not send `initialize` from the smoke. Two ways to unblock, his choice:
+
+- ARM change: a read-only principal's `initialize` does not write `last_briefing_*`.
+- An explicit exception, approved by Todd, that those three columns may move on `initialize` only. Decision 2 stays as written until that exception exists.
+
+`get_briefing` stays off the v1 call list either way.
+
+### Port 8788
+
+**Reported, not verified here.** `app/openclaw_mcp_gateway.py` defaults to port **8788**. **Verified on the MSI:** the Ops console that captures model context is also port **8788**. Starting that gateway on the MSI would bind the same port as the TV capture path. The smoke does not start `openclaw_mcp_gateway` on 8788. The live agent's model `baseUrl` stays `http://127.0.0.1:11434`. The harness talks to the Ops console's existing `ollamaFetch` route, not to a second listener on 8788.
+
+### How OpenClaw actually holds the key
+
+**Reported, not verified here.** There is no shared ARM client library. OpenClaw connects to ARM from its own config. The live secret is the Windows user environment variable `ARM_MCP_PIN`, not a literal pasted into `openclaw.json`. The MSI notes said the bearer was under `mcp.servers.arm` in that file. This session did not re-open the laptop, so it cannot show whether the json stores the env-var reference or the secret. The plan's rule is: do not copy `ARM_MCP_PIN`, do not print it, and do not treat a value in the json as the thing to mint beside. The smoke key, once a read-only level exists, goes in the harness env var named by `key_env`.
+
+**Reported, not verified here.** OpenClaw's ARM behavior rules are prompt text only. The live agent is configured as a full worker that claims and completes items. That matches the schema-verified active bot (`ARM Agent v0.184.0`, autonomy `L3`) being a worker, not a reader. The harness enforces the allow-list in its own code: a call whose tool name is not on the list is not sent. A prompt is not that check.
+
 ## 3. What the MSI notes already established
 
 ### ARM access
@@ -134,16 +192,16 @@ None of this names the MCP tool that returns a BTB row or a certificate. Those t
 
 - MCP endpoint: `https://agentic-records-manager.com/mcp`. Transport is streamable HTTP. JSON-RPC methods in use are `initialize`, `tools/list`, and `tools/call`.
 - The server enforces an envelope. Denial names cited: `tool_denied_for_principal`, `envelope_denies_tool`. Bots have `can_approve=False`.
-- OpenClaw authenticates with `Authorization: Bearer armpin_…` from `~/.openclaw/openclaw.json` under `mcp.servers.arm`.
-- That pin is the **live** pin for principal **"ARM Agent / block-aero-americas"** with the **full Records Manager envelope**. It is not a read-only pin.
+- OpenClaw authenticates to ARM with a bearer `armpin_…`. **Verified on the MSI:** the notes placed that material under `mcp.servers.arm` in `~/.openclaw/openclaw.json`. **Reported, not verified here (section 2b):** the secret itself is the Windows user env var `ARM_MCP_PIN`, not a literal in the json. Do not copy either place into the smoke.
+- That pin is the **live** pin for principal **"ARM Agent / block-aero-americas"** with the **full Records Manager envelope**. It is not a read-only pin. **Reported, not verified here:** the live agent is a full worker that claims and completes work, and those rules are prompt text only.
 - Any `tools/call` heartbeats a presence lease `bot:<principal_id>` (presence / Sessions chrome). That is a residual soft write even when the tool itself only reads.
 - Live `tools/list` was **not** invoked.
 
 ### Tool classes
 
-**Doc-derived.** Not confirmed against a live tool list.
+**Doc-derived.** Not the envelope in `principal_envelope.py` (that file was not readable here; section 2b). Not confirmed against a live tool list. Do not treat this set as proof that a current L0 key is read-only. Reported L0 still includes claim, complete, post message, and put pulse head, and runtime-usage reporting is allowed at every level.
 
-Reads (candidates, not an allow-list until `tools/list` on a smoke pin returns them):
+Reads (doc-derived candidates only):
 
 - `get_briefing(if_version)` — **dropped from the v1 call list** after section 2a. The `principals.last_briefing_*` columns are the side effect decision 2 does not allow.
 - `get_pulse_head`
@@ -273,7 +331,7 @@ A live MCP pass (option A) is a later program. Folding A into the same run as B 
 
 ### Recommendation
 
-**Build and run B.** Decisions 1–4 are approved. The next step is minting each configured account's read-only key and building the harness (section 5). If the minted key's `tools/list` advertises a mutator, stop. Do not fall back to the live pin or to Todd's account. The lease and last-seen update are allowed (decision 2). Any other write fails the run. Model calls go through the console harness route (decision 3). The live agent `baseUrl` stays `http://127.0.0.1:11434`.
+**Build and run B after the blocker in section 2b clears.** Decisions 1–4 stay approved. The next step is not minting. ARM first needs a read-only role or level whose `tools/list` omits claim, complete, post message, put pulse head, and runtime-usage reporting. Todd also has to answer whether `initialize` may touch `principals.last_briefing_*` (section 11). Until both are done, do not mint and do not send `initialize`. The harness, when it is built, enforces the allow-list in code. The lease and last-seen update stay the only accepted soft writes (decision 2). Model calls go through the console harness route (decision 3), not through a second process on port 8788. The live agent `baseUrl` stays `http://127.0.0.1:11434`.
 
 C is the follow-up program after B passes. A is not scheduled.
 
@@ -281,12 +339,12 @@ C is the follow-up program after B passes. A is not scheduled.
 
 Decisions 1–4 are recorded. This plan does not mint a key, build a harness, or call ARM.
 
-**Next step:** mint the read-only key for each account in the config list, then build the harness that reads with those keys. v1's list has one entry (Americas). The harness code is a later change, not this pull request.
+**Next step:** do not mint yet. ARM adds the read-only role or level recommended in section 2b (a later ARM change, not this PR). Todd answers the `initialize` / `last_briefing_*` question. Only then mint one key per accounts-config entry and build the harness so the allow-list is code, not a prompt. v1's list has one entry (Americas).
 
 Before any ARM RPC from that harness:
 
 1. Accounts config on the MSI, mode `0600`, outside git. Shape below. v1 contains the Americas account only. The harness loops the list. It does not branch on the label `Americas` or on any account id.
-2. Mint one dedicated read-only key per list entry (decision 1). Illustrative display name: `ARM smoke reader`. `can_approve` stays false. Short validity, the run window only. Store the secret in the environment variable named by that entry's `key_env`. Never write the secret into the config file, the live `openclaw.json`, the JSONL, the console ring notes, git, Slack, or email.
+2. Mint one dedicated key per list entry only after the section 2b blocker is gone (decision 1). Illustrative display name: `ARM smoke reader`. `can_approve` stays false. Short validity, the run window only. The level on that principal is the new read-only level, not L0 and not the live agent's L3. Store the secret in the environment variable named by that entry's `key_env`. Never write the secret into the config file, `ARM_MCP_PIN`, the live `openclaw.json`, the JSONL, the console ring notes, git, Slack, or email.
 3. Fingerprint check, without printing secrets: the value in `key_env` must differ from the live `mcp.servers.arm` pin and must not be Todd's personal credential. Mismatch means stop.
 4. The key's envelope is an **allow-list** of the named read tools in section 3. Precheck on the first run: `tools/list`. If any soft-write or hard-banned name is advertised, stop. **Live `tools/list` is still unverified** until that precheck runs.
 5. Live agent quiesced for the whole window, including the after-snapshot:
@@ -327,12 +385,12 @@ One attestation window. No second ARM client in parallel (the live heartbeat mus
 
 | Step | Action | ARM writes expected |
 |---|---|---|
-| 0 | **Next:** mint one read-only key per accounts-config entry (v1: Americas). Build the harness. Do not call ARM from this plan. | None from this document |
-| 1 | Backup `openclaw.json`. Quiesce live MCP. Confirm live `baseUrl` is `http://127.0.0.1:11434`. | None |
-| 2 | Before-image: row counts and timestamp checksums (section 9). Save max `created_at` / max `id` on `pipeline_log`, `chain_operations`, `asset_write_ledger`, `login_events`, `email_log`, and `arm_agent_runtime_usage`. There is no table named `audit`. | None (SQL `SELECT` only) |
-| 3 | For each account, MCP `initialize`, then `tools/list`, with that account's key. Save the raw tool list. Abort that account if the envelope is not read-only. **`tools/list` has not been run yet.** | Presence lease and last-seen for that principal. Allowed (decision 2). |
+| 0 | **Blocked.** ARM ships a read-only role or level (section 2b). Todd answers the `initialize` / `last_briefing_*` question. Do not mint and do not call ARM from this plan. | None from this document |
+| 1 | After that, mint one read-only key per accounts-config entry (v1: Americas). Build the harness with the allow-list in code. Backup `openclaw.json`. Quiesce the live worker so it cannot claim or complete during the window. Confirm live model `baseUrl` is `http://127.0.0.1:11434`. Do not start a gateway on port 8788. | None |
+| 2 | Before-image: row counts and timestamp checksums (section 9). Save max `created_at` / max `id` on `pipeline_log`, `chain_operations`, `asset_write_ledger`, `login_events`, `email_log`, and `arm_agent_runtime_usage`. There is no table named `audit`. Also save `principals.last_briefing_version`, `last_briefing_at`, and `last_briefing_via` for the smoke principal. | None (SQL `SELECT` only) |
+| 3 | For each account, MCP `initialize`, then `tools/list`, with that account's key. Save the raw tool list. Abort if any claim, complete, post-message, put-pulse-head, or runtime-usage tool is advertised, or if any other mutator is advertised. **`tools/list` has not been run yet.** If Todd has not allowed an `initialize` exception, abort when `last_briefing_*` moved. | Presence lease and last-seen for that principal. Allowed (decision 2). `last_briefing_*` is allowed only if Todd has approved that exception. |
 | 4 | Allow-listed reads only, sequential, into that account's `snapshot.jsonl`. Then no further ARM RPC for that account. | Same allowed soft write per call. Any other write fails the run. |
-| 5 | Mid-image: repeat step 2. Diff against the before-image. Abort the model step unless every delta is on the decision 2 allow-list. | None |
+| 5 | Mid-image: repeat step 2. Diff against the before-image. Abort the model step unless every delta is on the decision 2 allow-list, plus `last_briefing_*` only when Todd has approved that exception. | None |
 | 6 | Choose the sample (section 8). Build prompts from the JSONL files only. | None |
 | 7 | Model calls through the smoke console route (`ollamaFetch`), tools omitted. Cap volume so the ring keeps the run. Live agent `baseUrl` unchanged. | None |
 | 8 | Local hallucination check. Write per-account result sections and the rollup. | None |
@@ -345,15 +403,15 @@ Standing rule carried into the harness: the same error three times stops the run
 
 ### Credential
 
-**Decision 1. APPROVED.** ARM can issue a dedicated read-only key per account. Never Todd's personal login. Never the live pin already in `openclaw.json` (today that pin is the full-envelope Americas agent).
+**Decision 1. APPROVED, and blocked in practice.** ARM is supposed to issue a dedicated read-only key per account. Never Todd's personal login. Never the live secret in `ARM_MCP_PIN` / the live `openclaw.json` entry (today that agent is the full-envelope Americas worker). **Reported, not verified here:** no current role or level is read-only, so minting is waiting on the section 2b server change.
 
 **Verified on the MSI.** That live pin is full envelope. Using it for the smoke would make "read-only" a client convention on a principal that is allowed to operate.
 
-The key is still unused. Minting it is the next step. Until `tools/list` runs against it, the envelope contents, argument names, and pagination fields stay unverified. A database export is not the read path.
+The key is still unused. Minting waits on the section 2b blocker. Until `tools/list` runs against a read-only key, argument names and pagination fields stay unverified. A database export is not the read path.
 
 ### Which calls
 
-Client allow-list, and only if `tools/list` also advertises the name:
+Client allow-list. The harness refuses to send any other name, in code. A name is still called only if `tools/list` on the read-only key also advertises it. This table is the doc-derived candidate set, not a dump of `principal_envelope.py`.
 
 | Tool | Doc-derived role | Smoke use |
 |---|---|---|
@@ -838,21 +896,23 @@ If a claim was accidentally taken, the kill switch does **not** complete the wor
 - Heartbeat JSON BOM and stale port 8787 can make a console-related heartbeat path mis-parse. Out of scope to fix here. It is a reason not to rely on those files during the smoke.
 - Block Aero External API v2 (`/api/v2`, `X-Api-Key`, platform search) is a different surface from the ARM MCP. **Source: Block Aero REST client reference, not this repo, not the MSI notes.** Do not point the smoke at `/api/v2/asset/search` and call it an ARM MCP read.
 - Pagination, rate limits, and which MCP tool returns a BTB or certificate row remain unverified. There is no `audit` table; the log tables in section 2a are the check. `updated_at` is confirmed on the tables named there, not on every table.
+- `github.com/Block-Aero/block-aero-ai-records-manager` was not readable from this session (HTTP 404). Section 2b is reported, not line-cited. The v1 tool names were not rebuilt from `principal_envelope.py`. <!-- pragma: allowlist secret -->
 - B does not exercise OpenClaw. Passing it must not be used to grant the live agent write tools.
 
 ## 11. Open questions
 
-Resolved on 2026-10-05 by Todd Siena and removed from this list: the read-only key (decision 1), the presence lease and last-seen soft write (decision 2), the scoped ops-console exception (decision 3), and Americas-only v1 with a config-driven account list (decision 4). The path those decisions select is the option B harness. A/B/C is not an open choice for this run.
+Resolved on 2026-10-05 by Todd Siena and removed from this list: the intent to use a dedicated key (decision 1), the presence lease and last-seen soft write (decision 2), the scoped ops-console exception (decision 3), and Americas-only v1 with a config-driven account list (decision 4). The path those decisions select is the option B harness. A/B/C is not an open choice for this run. Decision 2 is not reopened by this edit. The new blocker is that today's envelope, as reported, has no read-only level to mint.
 
-Still open, and still unverified where noted:
+Still open:
 
-1. Moondream on document page images in v1, or text-only Qwen? The plan runs Moondream only when that account's snapshot already contains a page image the key may fetch. Otherwise it skips. Whether a skip fails v1 is unanswered.
-2. Pass thresholds Todd has not set: max records and max wall time. The plan caps the model sample at 20 calls per account and 25 per run so the TV ring can hold them, and does not require full-table coverage. The missing-audit-table question is closed: there is no `audit` table, and the log tables in section 2a are the check.
-3. **Unverified.** Live `tools/list` was not run. Argument names, pagination cursors, rate limits, and whether `registry_insights` is the exact tool name are unknown until the harness precheck. `factory_jobs.mcp_smoke_tools` had no stored list to copy.
-4. **Unverified.** Which MCP tool, if any, returns BTB, certificate, or `ocr_artifacts.page_texts`? The tables exist. The doc-derived reads may only cover pulse, playbook, and work items. `get_briefing` is intentionally not in v1.
-5. **Unverified.** Is `127.0.0.1:11434` on the MSI the RTX Ollama or a forwarder?
-6. Should `chat_messages` stay excluded for v1? The plan excludes them.
-7. The ARM application source, including any package called N-MCP, was not in this environment. A later read of that repo can replace the doc-derived tool list. Until then the public `GET /mcp` identity and the Neon catalog are the source-backed layer.
+1. **For Todd. Blocks `initialize`.** `deploy/AGENT_RUNTIME.md` is reported to say the MCP `initialize` handshake may update `principals.last_briefing_*`. Decision 2 forbids those columns from moving, and `initialize` is the first ARM call. This session could not open `app/routers/mcp.py`. Choose one: an ARM change so a read-only principal's `initialize` does not write those columns, or an explicit exception you approve for `initialize` only. Until you choose, the smoke does not send `initialize`.
+2. Moondream on document page images in v1, or text-only Qwen? The plan skips Moondream. Page bytes are a `gcs_uri`, not a column of bytes. Whether a skip fails v1 is unanswered.
+3. Pass thresholds you have not set: max records and max wall time. The plan caps the model sample at 20 calls per account and 25 per run so the TV ring can hold them, and does not require full-table coverage.
+4. **Unverified.** Live `tools/list` was not run. Argument names, pagination cursors, rate limits, and whether `registry_insights` is the exact tool name are unknown until the harness precheck. `factory_jobs.mcp_smoke_tools` had no stored list to copy. `app/principal_envelope.py` was not readable here (repo 404), so the v1 names are still the doc-derived set.
+5. **Unverified.** Which MCP tool, if any, returns BTB, certificate, or `ocr_artifacts.page_texts`? The tables exist. `get_briefing` is intentionally not in v1.
+6. **Unverified.** Is `127.0.0.1:11434` on the MSI the RTX Ollama or a forwarder?
+7. Should `chat_messages` stay excluded for v1? The plan excludes them.
+8. **Reported, not verified here.** Confirm on the MSI that the live secret is `ARM_MCP_PIN` and that `openclaw.json` does not also store the pin literal. Confirm whether `openclaw_mcp_gateway` is installed and whether anything besides the Ops console is bound to port 8788.
 
 ## 12. Non-goals
 
