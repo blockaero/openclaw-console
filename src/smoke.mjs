@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
+import { auditWindow } from "./auditor.mjs";
 import { createGuard } from "./guard.mjs";
 import { PHASE2_TOOLS, RECORD_TYPES } from "./policy.mjs";
 import { scoreModelOutput } from "./score.mjs";
@@ -8,13 +9,13 @@ import { assertTransportNotLive, refusingTransport } from "./transport.mjs";
 export const SMOKE_STEP_STATUS = Object.freeze({
   arm_read_only_level: "gate",
   mint_and_quiesce: "operator",
-  before_image: "blocked_on_auditor",
+  before_image: "pure_function_when_images_supplied",
   initialize_and_tools_list: "injected_transport_only",
   allowlisted_reads: "injected_transport_only",
-  mid_image: "blocked_on_auditor",
+  mid_image: "pure_function_when_images_supplied",
   model_console_route: "not_in_this_repo",
   local_score: "pure_function_when_model_output_is_supplied",
-  after_image: "blocked_on_auditor",
+  after_image: "pure_function_when_images_supplied",
   kill_switch: "operator",
 });
 
@@ -39,7 +40,7 @@ function shell(accounts, extra) {
       live_operator_pin_used: false,
       status: "not_run",
     })),
-    zero_writes: { pass: false, reason: "auditor_not_in_this_scaffold" },
+    zero_writes: { pass: false, verdict: "unverified", reason: "not_run" },
     tv_capture: "not_run",
     rollup: {
       accounts_configured: accounts.length,
@@ -220,20 +221,25 @@ export async function runSmoke(options = {}) {
       forbidden_tools_invoked: [],
       report_runtime_usage_called: false,
       pass: false,
-      fail_reasons: ["zero_writes_not_attested", "tv_capture_not_run"],
+      fail_reasons: ["model_step_not_run", "tv_capture_not_run"],
     });
     guard.dropPermission();
     guard.clearHalt({ armReadonlyLevelReady: true });
   }
 
   const failed = accountResults.filter((account) => account.pass !== true).length;
+  const zeroWrites = auditWindow(options.audit, {
+    principalId: options.principalId,
+    expectedCalls: guard.armCalls,
+  });
+  const tvCapture = options.capture?.confirmed === true ? "pass" : "not_run";
   return {
     ...shell([], {}),
     accounts: accountResults,
     arm_calls: guard.armCalls,
     blocked_on: null,
-    zero_writes: { pass: false, reason: "auditor_not_in_this_scaffold" },
-    tv_capture: "not_run",
+    zero_writes: zeroWrites,
+    tv_capture: tvCapture,
     rollup: {
       accounts_configured: accounts.length,
       accounts_passed: 0,
@@ -241,7 +247,11 @@ export async function runSmoke(options = {}) {
       pass: false,
     },
     pass: false,
-    fail_reasons: ["zero_writes_not_attested", "tv_capture_not_run"],
+    fail_reasons: [
+      zeroWrites.pass ? null : "zero_writes_not_attested",
+      tvCapture === "pass" ? null : "tv_capture_not_run",
+      "model_step_not_run",
+    ].filter(Boolean),
   };
 }
 

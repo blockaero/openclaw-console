@@ -2,7 +2,7 @@
 
 Scaffolding for a tool-less OpenClaw `arm-ro` profile and an option B read-only smoke against ARM.
 
-Nothing here calls ARM, mints a key, or talks to the Ops console. The guard starts halted. The smoke stays blocked until ARM ships a real read-only level whose `initialize` handshake writes at most one server-generated last-seen timestamp. The client does not send briefing or processing writes.
+Nothing here calls ARM, mints a key, or talks to the Ops console. The guard starts halted. The smoke stays blocked until ARM ships a real read-only level whose `initialize` handshake writes at most one server-generated last-seen timestamp. The client does not send briefing or processing writes. Attended jobs stay uncertified until a C4 record exists. The auditor scores supplied images and does not open a database connection.
 
 ```bash
 npm test

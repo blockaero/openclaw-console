@@ -1,6 +1,10 @@
 import { pathToFileURL } from "node:url";
+import { auditCheckpoint } from "./auditor.mjs";
 import { createGuard } from "./guard.mjs";
+import { ladderAllows } from "./ladder.mjs";
 import { loadArmRoDirection, planSlot } from "./profile.mjs";
+import { RECORD_TYPES } from "./policy.mjs";
+import { computeFacts, renderTemplate } from "./render.mjs";
 
 export async function runScriptedJob({
   jobId,
@@ -10,6 +14,10 @@ export async function runScriptedJob({
   doneRunIds,
   guard,
   armReadonlyLevelReady = false,
+  mode = "attended",
+  certification,
+  audit,
+  principalId,
 } = {}) {
   const catalog = loadArmRoDirection().jobs;
   const job = catalog.jobs.find((item) => item.id === jobId);
@@ -28,6 +36,22 @@ export async function runScriptedJob({
   const slot = planSlot({ jobId, accountLabel, slotUtc, nowUtc, doneRunIds });
   if (slot.action !== "run") return { ...slot, arm_calls: 0, tools: job.tools };
 
+  if (armReadonlyLevelReady === true && mode !== "smoke") {
+    const denied = job.tools
+      .map((tool) => ladderAllows(tool, { mode, certification }))
+      .find((result) => !result.ok);
+    if (denied) {
+      return {
+        action: "blocked",
+        reason: denied.reason,
+        run_id: slot.run_id,
+        arm_calls: 0,
+        tools: [],
+        mode,
+      };
+    }
+  }
+
   const active = guard ?? createGuard({ halted: true });
   if (armReadonlyLevelReady === true) {
     active.clearHalt({ armReadonlyLevelReady: true });
@@ -45,21 +69,48 @@ export async function runScriptedJob({
   }
 
   const fetched = [];
+  const records = [];
   for (const tool of job.tools) {
     if (!pre.certified.includes(tool)) continue;
-    await active.call(tool, {});
+    const sent = await active.call(tool, {});
     fetched.push(tool);
+    records.push({ record_type: RECORD_TYPES[tool] ?? "unknown", payload: sent.body });
   }
+  const mid = auditCheckpoint({
+    checkpoint: "mid",
+    before: audit?.before,
+    after: audit?.mid,
+    principalId,
+    expectedCalls: active.armCalls,
+  });
+  if (mid.verdict !== "clean") {
+    return {
+      action: "quarantine",
+      reason: mid.reason,
+      verdict: mid.verdict,
+      run_id: slot.run_id,
+      tools: fetched,
+      phrase: false,
+      delivered: false,
+      arm_calls: active.armCalls,
+      state: "QUARANTINE",
+    };
+  }
+  const facts = computeFacts(records);
   return {
-    action: "fetched",
+    action: "rendered",
     reason: "template_only",
     run_id: slot.run_id,
     tools: fetched,
     phrase: false,
+    delivered: false,
+    done: false,
+    facts,
+    template: renderTemplate(facts),
     arm_calls: active.armCalls,
-    state: "SEAL",
-    next: "AUDIT_MID",
-    next_blocked: "auditor_not_in_this_scaffold",
+    state: "RENDER",
+    next: "AUDIT_POST",
+    next_blocked: audit?.post ? null : "auditor_image_missing",
   };
 }
 

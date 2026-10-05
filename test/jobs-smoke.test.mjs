@@ -69,12 +69,11 @@ test("a missed slot is not replayed and a halted job does not call ARM", async (
   assert.deepEqual(phase3.tools, []);
 });
 
-test("an exact slot fetches only the job tools through an injected transport", async () => {
+test("an attended slot without a C4 certificate does not call ARM", async () => {
   const transport = fakeTransport({
     tools: [
       { name: "get_pulse_head" },
       { name: "get_account_pulse" },
-      { name: "get_project_status" },
     ],
   });
   const guard = createGuard({ transport, halted: true });
@@ -86,15 +85,10 @@ test("an exact slot fetches only the job tools through an injected transport", a
     guard,
     armReadonlyLevelReady: true,
   });
-  assert.equal(result.action, "fetched");
+  assert.equal(result.action, "blocked");
+  assert.equal(result.reason, "uncertified");
   assert.equal(result.run_id, `j1:example:${SLOT}`);
-  assert.deepEqual(result.tools, ["get_pulse_head", "get_account_pulse"]);
-  assert.equal(result.phrase, false);
-  assert.equal(result.next_blocked, "auditor_not_in_this_scaffold");
-  assert.deepEqual(
-    transport.calls.filter((call) => call.method === "tools/call").map((call) => call.name),
-    ["get_pulse_head", "get_account_pulse"],
-  );
+  assert.equal(transport.calls.length, 0);
 });
 
 test("the default smoke does not call ARM and does not leak a key", async () => {

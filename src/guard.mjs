@@ -1,5 +1,7 @@
-import { CAPS, LIST_TOOLS, PHASE2_TOOLS, checkToolsList } from "./policy.mjs";
+import { CAPS, LIST_TOOLS, PHASE2_TOOLS } from "./policy.mjs";
 import { createClient, selectArguments } from "./client.mjs";
+import { isPhase3Placeholder } from "./phase3.mjs";
+import { verifyToolsList } from "./tools-list.mjs";
 import { assertTransportNotLive, refusingTransport } from "./transport.mjs";
 
 function refusal(reason) {
@@ -75,6 +77,23 @@ export function createGuard(options = {}) {
       return { ok: true, state, certified: [] };
     },
 
+    ingest(message) {
+      const method = message?.method;
+      if (method === "sampling/createMessage" || method === "roots/list") {
+        state = "HALTED";
+        certified = new Set();
+        return { ok: false, reason: "server_capability_halt", state };
+      }
+      if (method === "notifications/tools/list_changed") {
+        this.dropPermission();
+        return { ok: true, reason: "permission_dropped", state };
+      }
+      if (method === "resources/read" || typeof message?.uri === "string") {
+        return { ok: false, reason: "resource_refused", state };
+      }
+      return { ok: false, reason: "method_refused", state };
+    },
+
     async precheck() {
       if (state === "HALTED") return refusal("halted");
       pages.clear();
@@ -118,8 +137,7 @@ export function createGuard(options = {}) {
         return { ok: false, reason: error.code ?? "tools_list_failed", handshake, arm_calls: armCalls };
       }
 
-      const names = listed.tools.map((tool) => (typeof tool === "string" ? tool : tool?.name));
-      const subset = checkToolsList(names);
+      const subset = verifyToolsList(listed.raw ?? listed);
       if (!subset.ok) {
         state = "HALTED";
         certified = new Set();
@@ -139,22 +157,23 @@ export function createGuard(options = {}) {
           schemas.set(tool.name, tool.inputSchema);
         }
       }
-      certified = new Set(subset.advertised);
+      certified = new Set(subset.callable);
       state = "FORWARD";
       return {
         ok: true,
         reason: "subset",
         handshake,
         initialize_params: initializeParams,
-        advertised: subset.advertised,
+        advertised: subset.callable,
         certified: PHASE2_TOOLS.filter((name) => certified.has(name)),
         schemas: Object.fromEntries(schemas),
+        schema_record: subset.schemas,
         arm_calls: armCalls,
       };
     },
 
     async call(name, args) {
-      if (state !== "FORWARD" || !certified.has(name)) {
+      if (isPhase3Placeholder(name) || state !== "FORWARD" || !certified.has(name)) {
         const error = new Error(`tool_denied:${name}`);
         error.code = "tool_denied";
         throw error;

@@ -2,7 +2,7 @@
 
 This repo holds the client, the guard, and the option B smoke as scaffolding. It does not mint a key, and it does not call ARM. The default commands (`npm test`, `npm run smoke`, `npm run jobs`) keep the guard halted and use a transport that refuses `https://agentic-records-manager.com/mcp`.
 
-The parent decisions are [PR #1](https://github.com/blockaero/openclaw-console/pull/1). The standing-reader shape folded in from [PR #2](https://github.com/blockaero/openclaw-console/pull/2) and [PR #3](https://github.com/blockaero/openclaw-console/pull/3) is the tool-less `arm-ro` profile and the scripted jobs under `profiles/arm-ro/`. Follow-on specs stay in PRs #4–#8.
+The parent decisions are [PR #1](https://github.com/blockaero/openclaw-console/pull/1). The standing-reader shape folded in from [PR #2](https://github.com/blockaero/openclaw-console/pull/2) and [PR #3](https://github.com/blockaero/openclaw-console/pull/3) is the tool-less `arm-ro` profile and the scripted jobs under `profiles/arm-ro/`. The client-side halves of PRs #4–#8 live in this draft. Their ARM-repo halves do not.
 
 ## Handshake
 
@@ -16,7 +16,7 @@ The client `initialize` body is fixed:
 
 The client refuses overrides. It does not send briefing fields (`principals.last_briefing_*`), counters, runtime usage, status, processing, or a last-seen value of its own. If an `initialize` result carries briefing content, a counter, runtime usage, status, sampling, roots, processing, or a non-empty model list, the guard halts before `tools/list` and before any `tools/call`.
 
-`get_briefing` is not on the call list. Later `tools/call` rows still follow decision 2 once an auditor exists. This scaffold does not ask ARM to suppress those columns, and it does not perform the column diff.
+`get_briefing` is not on the call list. Later `tools/call` rows still follow decision 2. This code does not ask ARM to suppress those columns. `src/auditor.mjs` scores a caller-supplied before/after image. It does not open Neon. A missing image is `unverified`, and `unverified` is not clean. A new `login_events` row stays the open section 14 question and is not a clean window.
 
 ## What runs in this repo today
 
@@ -25,10 +25,15 @@ The client refuses overrides. It does not send briefing fields (`principals.last
 | Tool-less profile direction | `profiles/arm-ro/openclaw.json` | Checked by tests. Not applied to OpenClaw. |
 | Policy hook | `profiles/arm-ro/policy.mjs` | Blocks every tool call. |
 | Scripted jobs | `profiles/arm-ro/jobs.json`, `src/jobs.mjs` | Exact slot, no catch-up. Default run stays halted. |
-| Guard | `src/guard.mjs` | Starts halted. Subset check, caps, one request in flight. |
+| Guard | `src/guard.mjs`, `src/guard-server.mjs` | Starts halted. Subset check, caps, one request in flight. Loopback listener only when a test or a later operator starts it. It does not bind 8788, 18789, 19789, or 18951. |
 | Client | `src/client.mjs`, `src/handshake.mjs` | Builds the decision 5 body. Sends a call only through an injected transport. |
-| Smoke | `src/smoke.mjs` | Option B result, `openclaw_mcp_exercised: false`, `pass: false`. |
+| tools/list check | `src/tools-list.mjs` | Compares a saved payload with the static list. One extra name yields an empty callable set. Cursor fields are recorded only when the schema names them. |
+| Ladder gate | `src/ladder.mjs` | Smoke may call the phase-2 intersection. Attended jobs need a C4 certificate. Unattended jobs need C5 and a receipt. This repo ships no certificate. |
+| Auditor | `src/auditor.mjs` | Decision 5 on `after_initialize`. Decision 2 on later checkpoints. No database client. |
+| Phase 3 | `src/phase3.mjs` | Placeholder names are refused. Capabilities have empty tool lists. |
+| Smoke | `src/smoke.mjs` | Option B result, `openclaw_mcp_exercised: false`. `pass` stays false while capture and the model step are absent. |
 | Local score | `src/score.mjs` | Citation check when a model object is supplied. No model process. |
+| Template | `src/render.mjs` | Counts and a code template. No model call. |
 
 `npm run smoke` prints that blocked result and exits 0. `--live` is refused the same way and does not open a socket.
 
@@ -45,10 +50,12 @@ Also still outside this scaffold, after that level exists:
 
 - Minting one key per account, fingerprinting it against `ARM_MCP_PIN`, and storing it. The smoke plan's one-shot name is the env var on the accounts entry (`key_env`). The standing reader uses a Credential Manager target (`key_ref`). This code records the name and does not read either secret.
 - Quiescing the live worker and confirming its model base URL stays `http://127.0.0.1:11434`.
-- The Neon auditor (PR #6): before-image, mid-image, after-image. `zero_writes.pass` stays false here.
-- The Ops console `ollamaFetch` route (decision 3). `tv_capture` stays `not_run`. Model calls in this scaffold are not sent to Ollama and are not described as captured.
+- A live Neon image. The diff function is in this repo. The `SELECT` role, the connection, and the production read are not.
+- The Ops console `ollamaFetch` route (decision 3). That console is not in this repository, so this draft does not add a capture UI. `tv_capture` stays `not_run`. Model calls are not sent to Ollama and are not described as captured.
 - `openclaw doctor` on the installed `v2026.9.4` before anyone applies `profiles/arm-ro/`.
-- PRs #4, #5, #7, and #8: the live `tools/list` procedure, the guard process spec, phase-3 tool names, and the CI write-trap ladder. Phase 3 in `jobs.json` has an empty tool list on purpose.
+- ARM CI write-traps (C0–C3), the disposable Neon branch, and any workflow that would contact production. Those stay in the ARM repository. This repo does not add workflow YAML.
+- Real phase-3 `tools/list` names. None are added here.
+- A certificate that says a tool passed C4 or C5. Attended jobs refuse to call ARM until a caller supplies one. Unattended jobs also need a receipt. The smoke canary itself does not require a prior certificate.
 
 ## After the ARM level exists
 
@@ -63,7 +70,7 @@ Operator order, once that transport exists:
 5. Run the smoke with `armReadonlyLevelReady: true` and the injected transport. For each account the guard sends `initialize`, then `tools/list`. One extra advertised name halts the run before `tools/call`. A missing phase-2 name is skipped. `registry_insights` runs only when that exact string is advertised.
 6. Allow-listed reads use the fixed order in `PHASE2_TOOLS`, one request in flight, with the caps from the plan (10 pages, 200 records, 32MB, pulse 256KB). A cursor is sent only when that tool's advertised schema names the field.
 7. Stop ARM for that account. The model step stays off until the console route exists. Official counts stay in code. `src/score.mjs` scores a supplied model object; it does not call a model.
-8. The auditor diffs the window. The result's `pass` becomes true only when every account passes, `zero_writes.pass` is true, and `tv_capture` is `pass`. This scaffold always returns `pass: false`.
+8. Supply the before, after-initialize, mid, and post images to `runSmoke`. `src/auditor.mjs` scores them. A missing image stays `unverified`. `pass` becomes true only when every account passes, `zero_writes.pass` is true, and `tv_capture` is `pass`. Capture is still absent, so this draft still returns `pass: false`.
 9. After the after-image, stop the process, leave the halt in place, and revoke the smoke key outside the diff. Leave `ARM_MCP_PIN` in place. Do not complete a work item.
 
 `openclaw_mcp_exercised` remains false for option B. A passing smoke is evidence about read scope, grounding, and capture. It is not operating rights for the live agent.
@@ -72,6 +79,6 @@ Operator order, once that transport exists:
 
 Command jobs use run id `job:account:slot`. The slot time is the scheduled time, passed in as `slotUtc`. The hook runs only when `slotUtc` equals `nowUtc`. Any other slot is `missed` and is not replayed. A run id already marked done is skipped.
 
-Phase 2 jobs (`j1`, `j2`, `j3`) fetch only their own tool list, and only names the latest subset check certified. Phrasing is off. The state machine stops at `SEAL` because the next state, `AUDIT_MID`, is the auditor.
+Phase 2 jobs (`j1`, `j2`, `j3`) fetch only their own tool list, and only names the latest subset check advertised. Phrasing is off. Without a C4 certificate the job returns before any ARM call. With a certificate, a missing audit image quarantines the output. A clean image renders a code template and stops before `AUDIT_POST` until that image exists. The output is not marked done.
 
 The `arm-ro` profile does not receive an ARM URL. Jobs call the in-process guard. If the guard is down or halted, nothing falls through to ARM.
