@@ -33,7 +33,98 @@ Three labels are used on every factual claim:
 
 **Verified in this repo.** `main` is commit `8363a1d` ("Initial commit"). The only tracked file is `README.md`, whose entire contents are the heading `openclaw-console`. There is no `openclaw.json`, no MCP server list, no tool allow-list or deny-list, no model-provider block, and no `ollama-batch.mjs`.
 
-So this checkout cannot confirm how OpenClaw is configured. Configuration facts below are from the MSI notes, not from code in this repository. GitHub code search and Confluence were not available from this session (GitHub API 403 for the integration; Atlassian MCP needs auth). They were not used to fill gaps.
+So this checkout cannot confirm how OpenClaw is configured. Configuration facts below are from the MSI notes, not from code in this repository. A later pass (section 2a) still did not find the ARM application source.
+
+## 2a. Investigation on 2026-10-05 (no ARM writes)
+
+The ARM application repository was not available. This workspace only contains this plan and `README.md`. `github.com/blockaero` as visible to this session does not include an AI Records Manager or N-MCP repo (direct lookups of the obvious repo names returned 404). GitHub code search did not find `envelope_denies_tool`, `get_account_pulse`, or the public MCP auth sentence. Slack search did not return a repository URL. Confluence and Google Drive were not authenticated. There is no component named N-MCP in the public server identity or in the database catalog. The live MCP server's own name is `arm`.
+
+What was read, with no `tools/list`, no `tools/call`, and no `INSERT`/`UPDATE`/`DELETE`:
+
+- **Public GET** `https://agentic-records-manager.com/mcp` and `GET /health` on 2026-10-05.
+- **Neon catalog reads** on project ARM-pooled `proud-shadow-85694415` (default branch): `information_schema`, `schema_migrations.version`, the Americas account identity row, bot principal names, and `doc_type_registry` category counts. No record bodies, no credential hashes, no human emails.
+
+### Public server
+
+**Verified by GET.**
+
+| Fact | Value |
+|---|---|
+| MCP server `name` / `title` | `arm` / Block Aero Agentic Records Manager |
+| Protocol | `2025-03-26` |
+| Transport | `jsonrpc-2.0-http` (the MSI notes' "streamable HTTP" still matches this; the GET body uses this exact string) |
+| Version | `0.185.10` on both `/mcp` and `/health` |
+| Auth sentence | "Google SSO as the ARM Agent runtime, or a lab connection token" |
+| Health | `status=ok`, `environment=production`, `database_connected=true` |
+| Platform link | `block_aero_url=https://sandbox.portal.block.aero`, `block_aero_mode=per_account` |
+| ARM's own model | `vision_provider=claude`, `ai_model=claude-sonnet-5` |
+
+`GET /openapi.json`, `GET /docs`, and `GET /mcp/tools` are 404 with a FastAPI-style `{"detail":"Not Found"}`. `GET /console` is 401 `{"detail":"Not authenticated"}`. `POST /api/access/check` exists (`GET` returns 405, `Allow: POST`). That route is the marketing access form. It was not called. It is not a records read.
+
+The route table of the API server is still unknown, because the source was not readable and OpenAPI is not published. Do not invent paths. The smoke talks to MCP `tools/call` on `/mcp` only, plus the Neon reads used for the attestation.
+
+ARM's own vision path is Claude Sonnet, not local Ollama. A smoke read that causes the server to OCR or caption a document would send bytes to that provider and would show up as a new `pipeline_log` row (`model_id`, `cost_usd`). That is not decision 2. It fails the run. The harness does not call ARM in order to use ARM's model.
+
+### Americas account (v1 config value)
+
+**Verified by a scoped Neon read** of `accounts` where the name matched Americas. Not a full customer dump.
+
+| Field | Value |
+|---|---|
+| `accounts.id` | `88fc877e-6b5d-407f-bbab-88ee95db0f04` |
+| `short_name` | `block-aero-americas-nap8` |
+| `org_name` | BLOCK AERO AMERICAS LLC |
+| `account_state` | `active` |
+| `tier` | `sl_i` |
+
+`accounts.id` is `text`. The v1 config entry uses this id. The harness still loops the list and does not branch on the id or the label.
+
+On that account, principals of `kind=bot`: one **active** row, `prin_8db350b5a8df48e9b17ff766bf303405`, display name `ARM Agent v0.184.0`, `runtime=grok`, `autonomy_level=L3`. Four other bots are `revoked` (display names `Records Manager`, `Records Manager v0.156.0`, `Records Manager v0.158.1`, `ARM Agent v0.171.0`), also `runtime=grok`. Five active `kind=human` principals exist; their emails were not read.
+
+This does not match the MSI note's agent name `"ARM Agent / block-aero-americas"` one-for-one, and the database runtime is `grok`, not OpenClaw. Server version `0.185.10` is also ahead of the active bot's `v0.184.0` label. The smoke key is a new principal. It does not reuse `prin_8db350b5a8df48e9b17ff766bf303405`. What `L3` permits is still unknown, because that enum is not defined in source here.
+
+`factory_jobs.mcp_smoke_tools` exists (`jsonb`) but no row had a non-null value, so a previous factory smoke did not leave a tool list to copy. `tools/list` is still unverified.
+
+### Columns the zero-write check can name
+
+**Schema-verified.** Decision 2 allow-list, and only on the smoke principal minted for the run:
+
+- `principals.last_seen_at`
+- `principal_credentials.last_used_at` (the credential row for that principal; `token_hash` stays unread)
+- a `chat_run_leases` row whose `principal_id` is that smoke principal, touching `heartbeat_at` / `started_at` / `status` only
+
+The MSI phrase `bot:<principal_id>` was not a column. `chat_run_leases` is keyed by `conversation_id` and has `principal_id`, `account_id`, `kind`, `heartbeat_at`. If a new lease row's `kind` is anything other than a presence heartbeat, it is not on the allow-list. `kind` values were not enumerated.
+
+These `last_seen` columns are **not** the decision 2 allow-list. A change to any of them fails the run:
+
+- `account_users.last_seen_at`
+- `part_identities.last_seen_at`
+- `photo_marking_priors.last_seen`
+- `demo_visits.last_seen`
+
+`get_briefing` is the likely writer of `principals.last_briefing_version`, `last_briefing_at`, and `last_briefing_via`. Those columns exist. The write itself was not observed in source. Decision 2 does not allow them. **v1 drops `get_briefing` from the call allow-list.** If a later run adds it back, a change to those three columns fails that account.
+
+There is no table whose name is `audit` or `audit_log`. `schema_migrations` has a version `email_log_audit`; the table is `email_log`. The attestation diffs these logs and fails on any new row during the window:
+
+- `pipeline_log` (processing, with `model_id` and `cost_usd`)
+- `chain_operations` (platform HTTP: `method`, `path`, `actor`, `origin`)
+- `asset_write_ledger`
+- `login_events`
+- `email_log`
+- `arm_agent_runtime_usage` (the COGS table behind `report_runtime_usage`)
+- `agent_work_items` changes to `claimed_at`, `claimed_by`, `status`, `finished_at`, or `result`
+
+`updated_at` exists on `accounts`, `principals`, `account_runtime_status`, `certificate_forms`, `doc_type_registry`, and others. It is a real column, not an assumption, on those tables. Tables that lack it still get `count(*)` only.
+
+### Documents and images
+
+**Schema-verified.** `record_blobs` stores `gcs_uri`, `mime_type`, `size_bytes`, `file_name`, `doc_fingerprint`. It does not store page bytes. `ocr_artifacts` stores `formatted_text`, `page_texts`, `page_count`, `provider`, `detected_language`. `processed_files` stores `file_id`, `file_name`, `file_hash`.
+
+So a page image for Moondream is not in Postgres. Fetching `gcs_uri` would leave the machine and is not an allow-listed MCP read. v1 does not send blobs to Moondream. If a read tool returns `page_texts` or `formatted_text`, that text is the model input. Moondream stays skipped unless a later, explicit image tool is added.
+
+`doc_type_registry` is reference data (about 159 types). Categories: Aerodrome Data, Commercial Data, Compliance Data, Design Data, Logistics Data, Maintenance Records. Conceptual classes that are set on some rows: `aircraft_oem_delivery`, `engine_oem_birth`, `incident_clearance`, `material_transfer_certificate`, `operator_configuration`, `identity_marking`, `removal_event_record`. When a payload contains `doc_type_code`, the model copies it and the checker compares it to this registry. The model does not invent a code. Work items and pulse rows that have no doc type stay `unknown` or the harness `record_type`.
+
+None of this names the MCP tool that returns a BTB row or a certificate. Those tables exist. The tool list does not, until `tools/list` on the smoke key.
 
 ## 3. What the MSI notes already established
 
@@ -54,7 +145,7 @@ So this checkout cannot confirm how OpenClaw is configured. Configuration facts 
 
 Reads (candidates, not an allow-list until `tools/list` on a smoke pin returns them):
 
-- `get_briefing(if_version)`
+- `get_briefing(if_version)` — **dropped from the v1 call list** after section 2a. The `principals.last_briefing_*` columns are the side effect decision 2 does not allow.
 - `get_pulse_head`
 - `get_account_pulse` / resource `arm://account/pulse` (etag / delta, 256KB cap)
 - `get_standing_playbook`
@@ -220,15 +311,15 @@ Illustrative. The file lives on the MSI. It is not added to this repo. v1 is the
 {
   "accounts": [
     {
-      "account_id": "<americas-account-id>",
-      "label": "Americas",
+      "account_id": "88fc877e-6b5d-407f-bbab-88ee95db0f04",
+      "label": "block-aero-americas-nap8",
       "key_env": "ARM_SMOKE_PIN_AMERICAS"
     }
   ]
 }
 ```
 
-`account_id` is the ARM account id. `label` is display text. `key_env` is the name of an environment variable. The harness resolves the key at runtime. Adding an account is a new object in `accounts` plus a new env var holding that account's own read-only key. No code branch per account.
+`account_id` is `accounts.id` (text). The UUID and label above are the Americas row from section 2a, stored as config data. `key_env` is the name of an environment variable. The harness resolves the key at runtime. Adding an account is a new object in `accounts` plus a new env var holding that account's own read-only key. No code branch per account. The smoke principal is new. It is not `prin_8db350b5a8df48e9b17ff766bf303405` (the active `ARM Agent v0.184.0` bot on that account).
 
 ## 6. Run order
 
@@ -238,7 +329,7 @@ One attestation window. No second ARM client in parallel (the live heartbeat mus
 |---|---|---|
 | 0 | **Next:** mint one read-only key per accounts-config entry (v1: Americas). Build the harness. Do not call ARM from this plan. | None from this document |
 | 1 | Backup `openclaw.json`. Quiesce live MCP. Confirm live `baseUrl` is `http://127.0.0.1:11434`. | None |
-| 2 | Before-image: row counts and timestamp checksums (section 9). Save the audit cursor if an audit table exists. Audit table name is still unverified. | None (SQL `SELECT` only) |
+| 2 | Before-image: row counts and timestamp checksums (section 9). Save max `created_at` / max `id` on `pipeline_log`, `chain_operations`, `asset_write_ledger`, `login_events`, `email_log`, and `arm_agent_runtime_usage`. There is no table named `audit`. | None (SQL `SELECT` only) |
 | 3 | For each account, MCP `initialize`, then `tools/list`, with that account's key. Save the raw tool list. Abort that account if the envelope is not read-only. **`tools/list` has not been run yet.** | Presence lease and last-seen for that principal. Allowed (decision 2). |
 | 4 | Allow-listed reads only, sequential, into that account's `snapshot.jsonl`. Then no further ARM RPC for that account. | Same allowed soft write per call. Any other write fails the run. |
 | 5 | Mid-image: repeat step 2. Diff against the before-image. Abort the model step unless every delta is on the decision 2 allow-list. | None |
@@ -266,7 +357,7 @@ Client allow-list, and only if `tools/list` also advertises the name:
 
 | Tool | Doc-derived role | Smoke use |
 |---|---|---|
-| `get_briefing` | Briefing, optional `if_version` | One call. First run sends only arguments the advertised schema marks required. |
+| `get_briefing` | Briefing, optional `if_version`. Columns `principals.last_briefing_version`, `last_briefing_at`, `last_briefing_via` exist. | **Not called in v1.** Decision 2 does not allow those columns to move. |
 | `get_pulse_head` | Pulse head | One call. |
 | `get_account_pulse` | Account pulse, etag/delta, 256KB cap | One call. Do not sit on the 15–30s cadence. |
 | `get_standing_playbook` | Standing playbook | One call. |
@@ -341,7 +432,7 @@ Each selected record gets one model call that must:
 - flag anomalies only when they cite a path in the payload
 - list missing fields only as JSON paths that are absent or null
 
-Closed classification set, **proposed**: `certificate`, `back_to_birth`, `shop_visit`, `life_limit`, `work_item`, `status`, `part_list`, `unknown`. If the payload does not support a finer class, the expected answer is `unknown` or the harness type. A confident wrong class fails the hallucination check when it asserts a source value that is not there. It does not fail merely for choosing `unknown`.
+Closed classification set, from `doc_type_registry.category` when the payload has a document type, otherwise the harness `record_type` or `unknown`: `aerodrome_data`, `commercial_data`, `compliance_data`, `design_data`, `logistics_data`, `maintenance_records`, `work_item`, `status`, `part_list`, `unknown`. If the payload includes `doc_type_code`, the model copies that code into `cited_fields` and does not invent one. A confident wrong class fails the hallucination check when it asserts a source value that is not there. Choosing `unknown` is not itself a failure.
 
 ### Sample, not the whole file
 
@@ -374,7 +465,7 @@ Set `num_ctx` on the request. Do not inherit a laptop default.
 
 **Only for document page images.** It does not summarize JSON, and it does not receive a dumped record "for context."
 
-**Not verified:** whether any allow-listed read returns page image bytes. `record_blobs`, `ocr_artifacts`, `processed_files`, and `chat_attachment_cache` are candidate stores (**table names verified, contents not read**). If the snapshot contains no image bytes or image refs the smoke key is allowed to fetch, skip Moondream and set `moondream: skipped_no_images`. That skips cleanly. Whether v1 requires images at all is still an open question. The default is to skip.
+**Schema-verified (section 2a).** Page bytes are not in Postgres. `record_blobs.gcs_uri` points at object storage. `ocr_artifacts.page_texts` and `formatted_text` are the text already extracted. v1 does not fetch `gcs_uri` and does not send blobs to Moondream. If no allow-listed tool returns page text or an image the key is allowed to read, set `moondream: skipped_no_images`. Whether a skip fails v1 is still an open question. The default is to skip. ARM's own health reports `vision_provider=claude`; the smoke does not use that path.
 
 When an image is sent:
 
@@ -402,7 +493,8 @@ User:
 OUTPUT keys:
 - record_id (copy the harness record_id)
 - summary (short)
-- classification (one of: certificate, back_to_birth, shop_visit, life_limit, work_item, status, part_list, unknown)
+- classification (one of: aerodrome_data, commercial_data, compliance_data, design_data, logistics_data, maintenance_records, work_item, status, part_list, unknown)
+- doc_type_code (copy from the record when present, otherwise null)
 - missing_fields (array of JSON paths that are absent or null in the record)
 - anomalies (array of { "path", "source_value", "note" }; source_value must be copied from that path)
 - cited_fields (array of { "path", "value" } for every concrete value you relied on)
@@ -449,7 +541,7 @@ result
   decisions                 "approved-2026-10-05"
   labels
     verified_on_msi         string[]   facts the run re-checked
-    not_verified            string[]   gaps still open (tools/list, pagination, audit table)
+    not_verified            string[]   gaps still open (tools/list, pagination, which tool returns BTB rows)
   accounts[]                          one element per config entry, in config order
     account_id              string     from config, not a hardcoded name
     label                   string
@@ -491,12 +583,18 @@ result
     sql_role                "read-only"
     allowed_soft_writes               decision 2, nothing else
       - class: presence_lease
-        principal_id, key "bot:<principal_id>"
-        expected_calls, observed_count, table
+        principal_id
+        table: chat_run_leases
+        columns: heartbeat_at, started_at, status
+        kind_seen
       - class: last_seen
         principal_id
-        table, column          column name discovered at run time
-        rows_touched
+        table: principals
+        column: last_seen_at
+      - class: last_used
+        principal_id
+        table: principal_credentials
+        column: last_used_at
     tables[]
       name, row_count_before, row_count_after
       checksum_before, checksum_after, checksum_column
@@ -504,7 +602,7 @@ result
     audit
       table                 string | null     name still unverified
       new_rows              number
-      status                "clean" | "changed" | "table_not_found"
+      status                "clean" | "changed" | "no_audit_table_use_pipeline_and_chain_logs"
     forbidden_tools_invoked string[]
     report_runtime_usage_called false
     pass                    bool
@@ -523,9 +621,9 @@ Checksum, **proposed** because column names are **assumed**: for each table, rea
 
 A last-seen column on the smoke principal is not part of that business checksum failure. Decision 2 pulls it out of `unexpected_deltas` and records it under `allowed_soft_writes`. A timestamp move on a record, work item, or other business row stays unexpected.
 
-Audit table: **not verified.** It is not in the MSI table list. The before-image looks for a table whose name contains `audit`. If none exists, `audit.status` is `table_not_found`. Default remains **fail closed** when the audit table cannot be named, because the original brief asked for an audit-log check and Todd has not waived that. Whether a missing audit table fails the run is still an open question only in the sense that he has not confirmed the table. Until he waives it, the harness fail-closes. Finding the name is a catalog read during harness bring-up, before snapshot reads. If that catalog read finds nothing, do not start the account reads.
+Audit table: **resolved by the catalog read in section 2a.** No table is named `audit` or `audit_log`. The run does not fail merely because that name is absent. It fails if any of these gain a row, or a checksum change, during the window: `pipeline_log`, `chain_operations`, `asset_write_ledger`, `login_events`, `email_log`, `arm_agent_runtime_usage`. `audit.status` in the result is `no_audit_table_use_pipeline_and_chain_logs` when that check is clean.
 
-Presence lease and last-seen, **decision 2 APPROVED.** The change class is allowed. The table and column names are still **assumed**: the lease row may show up in `chat_run_leases` or `account_runtime_status`, and the last-seen column may be named `last_seen` or similar. The diff lists every table that moved. A delta is allowed only when it is the smoke principal's lease key `bot:<principal_id>`, or the last-seen field on that same principal or credential, and the counts match the ARM calls for the accounts in this run. A mark-read on a record, a business `updated_at`, or any other column fails. The allow-list is that class, not "whatever moved."
+Presence lease and last-seen, **decision 2 APPROVED, columns named in section 2a.** Allowed only for the smoke principal: `principals.last_seen_at`, `principal_credentials.last_used_at`, and a `chat_run_leases` heartbeat for that `principal_id`. `part_identities.last_seen_at`, `account_users.last_seen_at`, `principals.last_briefing_*`, and any business `updated_at` are not allowed. The allow-list is those columns, not "whatever moved."
 
 ### Hallucination check
 
@@ -556,7 +654,7 @@ An account **passes** only when every line below is true for that account:
 The run **rollup passes** only when every configured account passes and all of the following are true:
 
 1. Zero-writes passes. Deltas are empty except the decision 2 allow-list: presence lease `bot:<principal_id>` and the last-seen field for each smoke principal in this run, with counts matching that account's ARM calls. Any other write fails.
-2. Audit status is `clean`, or Todd has waived a missing audit table in writing. Default is no waiver. The audit table name is still unverified.
+2. The log tables in section 2a have no new rows and no checksum change. `audit.status` is `no_audit_table_use_pipeline_and_chain_logs` when that check is clean. A new `pipeline_log` row fails even if the only effect was ARM calling Claude.
 3. `tv_capture` is `pass`: each text model call still has its batch on the console at the end.
 4. Every model endpoint recorded is the smoke console route. The live agent `baseUrl` is still `http://127.0.0.1:11434`.
 5. The same error did not occur three times.
@@ -625,22 +723,23 @@ Illustrative. These are not ARM records.
     "allowed_soft_writes": [
       {
         "class": "presence_lease",
-        "principal_id": "principal_example",
-        "key": "bot:principal_example",
+        "principal_id": "prin_example",
+        "table": "chat_run_leases",
+        "columns": ["heartbeat_at"],
+        "kind_seen": "presence",
         "expected_calls": 4,
-        "observed_count": 4,
-        "table": "chat_run_leases"
+        "observed_count": 4
       },
       {
         "class": "last_seen",
-        "principal_id": "principal_example",
+        "principal_id": "prin_example",
         "table": "principals",
-        "column": "last_seen",
+        "column": "last_seen_at",
         "rows_touched": 1
       }
     ],
     "unexpected_deltas": [],
-    "audit": { "table": null, "status": "table_not_found", "new_rows": 0 },
+    "audit": { "table": null, "status": "no_audit_table_use_pipeline_and_chain_logs", "new_rows": 0 },
     "forbidden_tools_invoked": [],
     "report_runtime_usage_called": false,
     "pass": false
@@ -653,11 +752,11 @@ Illustrative. These are not ARM records.
     "pass": false
   },
   "pass": false,
-  "fail_reasons": ["illustrative: audit table was not named, so zero_writes.pass is false"]
+  "fail_reasons": ["illustrative: this sample shows the shape; zero_writes.pass is false only so the example is not mistaken for a real run"]
 }
 ```
 
-The example is a **fail** on purpose. The account section passes, and the lease plus last-seen are on the decision 2 allow-list (table and column names here are illustrative, not verified). The rollup fails because the audit table name is still unknown. A real pass needs `zero_writes.pass` true, `rollup.pass` true, and `fail_reasons` empty. The label `Americas` is config data for v1's one entry. The harness does not branch on it. `acct_example` stands in for the real account id.
+Illustrative ids (`acct_example`, `prin_example`, counts) are not the Americas row. The real v1 `account_id` is in the accounts config in section 5. Column names `principals.last_seen_at` and `chat_run_leases.heartbeat_at` are schema-verified. `kind_seen: "presence"` is still a placeholder until a real lease row shows its `kind`. A real pass needs `zero_writes.pass` true, `rollup.pass` true, and `fail_reasons` empty. The harness does not branch on the account label.
 
 ## 10. Risks and gaps
 
@@ -673,7 +772,7 @@ The smoke pin is an allow-list on the server. The harness copies that as a secon
 
 **Decision 2. APPROVED.** That lease, and the last-seen update on the same principal or credential, are the only soft writes the attestation allows. Counts must match the calls made for the principals in the accounts config.
 
-**Still unverified:** which table and column hold the lease and last-seen, and whether a read also mark-reads a briefing or moves a record timestamp. `get_briefing(if_version)` and pulse etag/delta are the likely places for an extra write. The mid-image diff classifies each delta. A mark-read, an audit insert that is not the lease, or any business-column change fails the run, and that tool comes off the allow-list before any retry.
+**Schema-verified in section 2a.** The caller's last-seen is `principals.last_seen_at` and `principal_credentials.last_used_at`. A presence row is `chat_run_leases` for that `principal_id`. `get_briefing` is off the v1 call list because `principals.last_briefing_*` would be a different write. Pulse etag/delta can still move something else; the mid-image diff classifies it. A mark-read, a `pipeline_log` insert, or any business-column change fails the run, and that tool comes off the allow-list before any retry.
 
 **Doc-derived.** `report_runtime_usage` writes a COGS row when tokens are greater than zero. Token totals stay in `result.json` only.
 
@@ -738,7 +837,7 @@ If a claim was accidentally taken, the kill switch does **not** complete the wor
 - This repo cannot be the place that learns OpenClaw's real allow-list. There isn't one in the tree, and the MSI notes say there isn't a hard one on disk either.
 - Heartbeat JSON BOM and stale port 8787 can make a console-related heartbeat path mis-parse. Out of scope to fix here. It is a reason not to rely on those files during the smoke.
 - Block Aero External API v2 (`/api/v2`, `X-Api-Key`, platform search) is a different surface from the ARM MCP. **Source: Block Aero REST client reference, not this repo, not the MSI notes.** Do not point the smoke at `/api/v2/asset/search` and call it an ARM MCP read.
-- Pagination, rate limits, image-returning tools, audit table name, and timestamp column names remain unverified.
+- Pagination, rate limits, and which MCP tool returns a BTB or certificate row remain unverified. There is no `audit` table; the log tables in section 2a are the check. `updated_at` is confirmed on the tables named there, not on every table.
 - B does not exercise OpenClaw. Passing it must not be used to grant the live agent write tools.
 
 ## 11. Open questions
@@ -748,12 +847,12 @@ Resolved on 2026-10-05 by Todd Siena and removed from this list: the read-only k
 Still open, and still unverified where noted:
 
 1. Moondream on document page images in v1, or text-only Qwen? The plan runs Moondream only when that account's snapshot already contains a page image the key may fetch. Otherwise it skips. Whether a skip fails v1 is unanswered.
-2. Pass thresholds Todd has not set: max records, max wall time, and a written waiver if the audit table cannot be found. The plan fail-closes on a missing audit table, caps the model sample at 20 calls per account and 25 per run so the TV ring can hold them, and does not require full-table coverage.
-3. **Unverified.** Audit table name. It is not in the MSI table list.
-4. **Unverified.** Live `tools/list` was not run. Argument names, pagination cursors, rate limits, and whether `registry_insights` is the exact tool name are unknown until the harness precheck.
-5. **Unverified.** Which MCP tool, if any, returns BTB, certificate, and document-page bodies? The named reads may only cover briefing, pulse, and work items.
-6. **Unverified.** Is `127.0.0.1:11434` on the MSI the RTX Ollama or a forwarder?
-7. Should `chat_messages` stay excluded for v1? The plan excludes them.
+2. Pass thresholds Todd has not set: max records and max wall time. The plan caps the model sample at 20 calls per account and 25 per run so the TV ring can hold them, and does not require full-table coverage. The missing-audit-table question is closed: there is no `audit` table, and the log tables in section 2a are the check.
+3. **Unverified.** Live `tools/list` was not run. Argument names, pagination cursors, rate limits, and whether `registry_insights` is the exact tool name are unknown until the harness precheck. `factory_jobs.mcp_smoke_tools` had no stored list to copy.
+4. **Unverified.** Which MCP tool, if any, returns BTB, certificate, or `ocr_artifacts.page_texts`? The tables exist. The doc-derived reads may only cover pulse, playbook, and work items. `get_briefing` is intentionally not in v1.
+5. **Unverified.** Is `127.0.0.1:11434` on the MSI the RTX Ollama or a forwarder?
+6. Should `chat_messages` stay excluded for v1? The plan excludes them.
+7. The ARM application source, including any package called N-MCP, was not in this environment. A later read of that repo can replace the doc-derived tool list. Until then the public `GET /mcp` identity and the Neon catalog are the source-backed layer.
 
 ## 12. Non-goals
 
