@@ -1,6 +1,6 @@
 # Read-only OpenClaw (production configuration)
 
-Status: plan only. This document does not change OpenClaw config, the MSI Ops console, Neon, or ARM. No ARM or MCP call was made while writing it. No key was minted. `tools/list` was not run.
+Status: the live ARM reader is still a plan. No ARM or MCP call was made. No key was minted. `tools/list` was not run. A local console in this repo can play the fixture run (open account, open session, processed records, local work-item proposals) and show each step's input and output. Start it with `node console/server.mjs`. Those proposals are not posted to ARM. The server changes in section 5 are still required before a live key.
 
 This is the standing reader that comes after the smoke in [docs/plans/openclaw-arm-readonly-smoke.md](openclaw-arm-readonly-smoke.md) (branch `cursor/openclaw-arm-readonly-smoke-7095`, PR #1). That smoke is option B: a harness outside OpenClaw. This plan is the later OpenClaw profile. It does not replace the smoke, and it does not reconfigure the live worker.
 
