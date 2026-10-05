@@ -1,0 +1,65 @@
+{
+  "scheduler": "openclaw --profile arm-ro automations",
+  "exact": true,
+  "catch_up": false,
+  "tz": "America/Los_Angeles",
+  "timeout_seconds": 600,
+  "deliver": false,
+  "jobs": [
+    {
+      "id": "j1",
+      "name": "ro-j1-pulse",
+      "phase": 2,
+      "cron": "5 6-19 * * *",
+      "phrase": false,
+      "tools": ["get_pulse_head", "get_account_pulse"],
+      "command_argv": ["node", "src/jobs.mjs", "--job", "j1"]
+    },
+    {
+      "id": "j2",
+      "name": "ro-j2-queue",
+      "phase": 2,
+      "cron": "15 7,15 * * *",
+      "phrase": false,
+      "tools": ["list_work_items", "get_deliverable_rollup", "get_project_status"],
+      "command_argv": ["node", "src/jobs.mjs", "--job", "j2"]
+    },
+    {
+      "id": "j3",
+      "name": "ro-j3-playbook",
+      "phase": 2,
+      "cron": "10 6 * * *",
+      "phrase": false,
+      "tools": ["get_standing_playbook", "list_priority_part_lists"],
+      "command_argv": ["node", "src/jobs.mjs", "--job", "j3"]
+    },
+    {
+      "id": "smoke",
+      "name": "arm-readonly-smoke",
+      "phase": "smoke",
+      "cron": null,
+      "phrase": false,
+      "tools": [
+        "get_pulse_head",
+        "get_account_pulse",
+        "get_standing_playbook",
+        "get_deliverable_rollup",
+        "list_work_items",
+        "list_priority_part_lists",
+        "get_project_status",
+        "registry_insights"
+      ],
+      "command_argv": ["node", "src/smoke.mjs"]
+    },
+    {
+      "id": "phase3",
+      "name": "phase3-waiting",
+      "phase": 3,
+      "cron": null,
+      "phrase": false,
+      "tools": [],
+      "blocked": "phase3_waiting_on_arm_tool",
+      "command_argv": null
+    }
+  ]
+}

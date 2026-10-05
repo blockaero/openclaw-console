@@ -1,0 +1,14 @@
+{
+  "name": "openclaw-console",
+  "private": true,
+  "type": "module",
+  "description": "Tool-less arm-ro profile direction and read-only ARM smoke scaffolding. Does not call ARM.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node src/smoke.mjs",
+    "jobs": "node src/jobs.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

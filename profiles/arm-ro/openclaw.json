@@ -1,0 +1,83 @@
+{
+  "gateway": {
+    "port": 19789,
+    "bind": "loopback"
+  },
+  "tools": {
+    "profile": "minimal",
+    "deny": [
+      "group:openclaw",
+      "group:runtime",
+      "group:fs",
+      "group:sessions",
+      "group:memory",
+      "group:web",
+      "group:ui",
+      "group:automation",
+      "group:messaging",
+      "group:nodes",
+      "group:agents",
+      "group:media",
+      "group:plugins",
+      "exec",
+      "process",
+      "code_execution",
+      "bash",
+      "read",
+      "write",
+      "edit",
+      "apply_patch",
+      "browser",
+      "canvas",
+      "gateway",
+      "session_status",
+      "cron",
+      "automations",
+      "plugins",
+      "openclaw",
+      "transcripts",
+      "message",
+      "nodes",
+      "computer"
+    ],
+    "codeMode": { "enabled": false },
+    "elevated": { "enabled": false }
+  },
+  "agents": {
+    "defaults": {
+      "heartbeat": { "every": "0m", "target": "none" }
+    },
+    "entries": {
+      "arm-ro": {
+        "model": {
+          "primary": "ollama/qwen3:8b",
+          "fallbacks": []
+        },
+        "modelPolicy": {
+          "allow": ["ollama/qwen3:8b"]
+        }
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "ollama": {
+        "api": "ollama",
+        "baseUrl": "http://127.0.0.1:11434",
+        "models": [
+          {
+            "id": "qwen3:8b",
+            "contextTokens": 8192,
+            "params": {
+              "num_ctx": 8192,
+              "temperature": 0,
+              "seed": 7,
+              "num_predict": 600,
+              "thinking": false
+            }
+          }
+        ]
+      }
+    }
+  }
+}
