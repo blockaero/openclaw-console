@@ -20,7 +20,7 @@ This principle settles the disagreements between the two later plans. Where they
 - [PR #2](https://github.com/blockaero/openclaw-console/pull/2) — Grok 4.7, branch `cursor/openclaw-readonly-config-grok-18d8`, file `docs/plans/openclaw-readonly-config-grok.md`.
 - [PR #3](https://github.com/blockaero/openclaw-console/pull/3) — Opus 5.5, branch `cursor/openclaw-readonly-config-plan-ab6e`, file `docs/plans/openclaw-readonly-config-opus.md`.
 
-The standing-reader design those two plans describe is section 13. It comes after option B. It does not replace the smoke, and it does not change section 5's next step, decision 2, or the handshake question in section 11.
+The standing-reader design those two plans describe is section 13. It comes after option B. It does not replace the smoke. The next step is still the ARM read-only level (section 5). Decision 2 is not rewritten. The handshake question is decided (decision 5).
 
 The smoke test answers one question: can a basic read of records already in ARM be turned into local model output, with the call visible on the TV, without granting operating rights and without business writes beyond the accepted presence lease and last-seen update.
 
@@ -28,14 +28,15 @@ The smoke test answers one question: can a basic read of records already in ARM 
 
 ## Decisions (approved 2026-10-05 by Todd Siena)
 
-These four were gates. They are closed. Later sections follow them.
+Decisions 1–4 were gates. They are closed. Decision 5 closes the handshake question. Later sections follow them.
 
 1. **Read-only key. APPROVED.** ARM can issue a dedicated read-only key (`armpin_` or equivalent) for the smoke. The key is never the live Americas pin in `~/.openclaw/openclaw.json` and never Todd's personal account. One key ref per account (see decision 4). The server envelope is still an allow-list of the named read tools. If `tools/list` advertises a mutator, that key is not the approved key and the run stops.
 2. **Presence lease and last-seen. APPROVED.** The presence lease and the last-seen update on every ARM call are an accepted soft write. The zero-writes attestation allow-lists exactly that change: the smoke principal's presence lease (`bot:<principal_id>`) and the last-seen (or equivalent) field on that same principal or credential. Every other write still fails the run, including business-row inserts, record `updated_at` changes, mark-read on a record, claims, COGS rows from `report_runtime_usage`, and audit rows that are not this lease.
 3. **Ops console. APPROVED.** The smoke's model calls may go through the MSI Ops console (`ollamaFetch` capture, TV Context batch view). This is an explicit, scoped exception to OpenClaw's standing rule "never touch the ops console." The exception covers only the smoke harness route. The live OpenClaw agent's model `baseUrl` stays `http://127.0.0.1:11434`. No deploy change and no edit to the live agent's model config.
 4. **Scope. APPROVED.** v1 runs the Americas account only. The harness does not hardcode Americas. Accounts come from a config list. Each entry is account id, label, and key ref (the environment-variable name, never the key). v1's list has one entry, the Americas account. Adding an account means adding a list entry and minting that account's read-only key. Each account gets its own snapshot file and its own result section. Pass/fail is per account, plus a rollup that passes only when every configured account passes.
+5. **Handshake. DECIDED 2026-10-05 by Todd.** The `initialize` handshake may write one server-generated last-seen timestamp, and that is the only handshake write. No other fields: no `principals.last_briefing_*` content, no counters, no runtime usage, and no status. The handshake triggers no processing. A move of `last_briefing_*`, a counter, runtime usage, status, or any processing on that handshake fails the run. This matches the cloud session "PLAN: ARM real read-only level spec (not L0 alias)" on `Block-Aero/block-aero-ai-records-manager`. Decision 2 is not rewritten. Later `tools/call` rows still follow decision 2. <!-- pragma: allowlist secret -->
 
-Path consequence of these approvals: build the option B harness. A and C are not this run.
+Path consequence of these approvals: build the option B harness. A and C are not this run. Minting still waits on the read-only level in section 2b, and that level has to implement decision 5.
 
 ## 1. How to read this plan
 
@@ -183,17 +184,16 @@ The v1 call list in section 3 was **not** rebuilt from `principal_envelope.py`, 
 - Add a bot level or role that is not an alias of L0. Illustrative name: `read_only`.
 - Put it in `app/principal_envelope.py` so `tools/list` returns only tools that do not write, and omits claim, complete, post message, put pulse head, and runtime-usage reporting.
 - Keep ledger tools closed to bots. Keep "unknown level means L0", so a missing level does not silently become read-only.
-- In `app/routers/mcp.py`, skip any `principals.last_briefing_*` write on `initialize` for that level. Whether Todd wants that skip, or an exception to decision 2, is an open question. This plan does not edit decision 2.
+- On `initialize` for that level, allow only decision 5: one server-generated last-seen timestamp. Do not write `principals.last_briefing_*`, counters, runtime usage, or status. Do not start processing. Decision 2 is not edited.
 - Do not rely on per-key scopes until they exist. The reported search found none.
 
-### Initialize versus decision 2
+### Handshake (decision 5)
 
-**Reported, not verified here** (`deploy/AGENT_RUNTIME.md`; `mcp.py` was not opened). The MCP `initialize` handshake may update `principals.last_briefing_*`. Those columns are outside decision 2. The run order's first ARM call is `initialize`. Until Todd answers the open question in section 11, do not send `initialize` from the smoke. Two ways to unblock, his choice:
+**Decided by Todd on 2026-10-05.** Not open. The reported note in `deploy/AGENT_RUNTIME.md` (unread here) said `initialize` may update `principals.last_briefing_*`. That fork is closed. The allowed handshake write is one server-generated last-seen timestamp. Nothing else on that call: no `last_briefing_*` content, no counters, no runtime usage, no status, and no processing.
 
-- ARM change: a read-only principal's `initialize` does not write `last_briefing_*`.
-- An explicit exception, approved by Todd, that those three columns may move on `initialize` only. Decision 2 stays as written until that exception exists.
+This is the same rule as the cloud session "PLAN: ARM real read-only level spec (not L0 alias)" on `Block-Aero/block-aero-ai-records-manager`. <!-- pragma: allowlist secret -->
 
-`get_briefing` stays off the v1 call list either way.
+This plan still does not send `initialize`. It is a plan, and the read-only level does not exist yet. Once that level exists and matches decision 5, the harness may send `initialize`. If `last_briefing_*`, a counter, runtime usage, or status moved, or if the handshake started processing, the run fails. Decision 2 still names the soft writes allowed on later calls. `get_briefing` stays off the v1 call list.
 
 ### Port 8788
 
@@ -352,7 +352,7 @@ A live MCP pass (option A) is a later program. Folding A into the same run as B 
 
 ### Recommendation
 
-**Build and run B after the blocker in section 2b clears.** Decisions 1–4 stay approved. The next step is not minting. ARM first needs a read-only role or level whose `tools/list` omits claim, complete, post message, put pulse head, and runtime-usage reporting. Todd also has to answer whether `initialize` may touch `principals.last_briefing_*` (section 11). Until both are done, do not mint and do not send `initialize`. The harness, when it is built, enforces the allow-list in code. The lease and last-seen update stay the only accepted soft writes (decision 2). Model calls go through the console harness route (decision 3), not through a second process on port 8788. The live agent `baseUrl` stays `http://127.0.0.1:11434`.
+**Build and run B after the blocker in section 2b clears.** Decisions 1–4 stay approved. Decision 5 is decided. The next step is not minting. ARM first needs a read-only role or level whose `tools/list` omits claim, complete, post message, put pulse head, and runtime-usage reporting, and whose `initialize` follows decision 5. Until that level exists, do not mint. This document does not send `initialize`. The harness, when it is built, enforces the allow-list in code. The lease and last-seen update on later calls stay the accepted soft writes (decision 2). The handshake itself is only the one last-seen timestamp in decision 5. Model calls go through the console harness route (decision 3), not through a second process on port 8788. The live agent `baseUrl` stays `http://127.0.0.1:11434`.
 
 C is the follow-up program after B passes. A is not scheduled. The reconciled shape of that later profile is section 13.
 
@@ -360,7 +360,7 @@ C is the follow-up program after B passes. A is not scheduled. The reconciled sh
 
 Decisions 1–4 are recorded. This plan does not mint a key, build a harness, or call ARM.
 
-**Next step:** do not mint yet. ARM adds the read-only role or level recommended in section 2b (a later ARM change, not this PR). Todd answers the `initialize` / `last_briefing_*` question. Only then mint one key per accounts-config entry and build the harness so the allow-list is code, not a prompt. v1's list has one entry (Americas).
+**Next step:** do not mint yet. ARM adds the read-only role or level recommended in section 2b (a later ARM change, not this PR). That level is not an alias of L0. Ledger tools stay closed. An unknown level is still L0. It has no briefing writes, no runtime-usage writes, and a no-processing mode. Its `initialize` follows decision 5: one server-generated last-seen timestamp, and no other fields. Only then mint one key per accounts-config entry and build the harness so the allow-list is code, not a prompt. v1's list has one entry (Americas).
 
 Before any ARM RPC from that harness:
 
@@ -406,12 +406,12 @@ One attestation window. No second ARM client in parallel (the live heartbeat mus
 
 | Step | Action | ARM writes expected |
 |---|---|---|
-| 0 | **Blocked.** ARM ships a read-only role or level (section 2b). Todd answers the `initialize` / `last_briefing_*` question. Do not mint and do not call ARM from this plan. | None from this document |
+| 0 | **Blocked.** ARM ships a read-only role or level (section 2b) whose handshake matches decision 5. Do not mint and do not call ARM from this plan. | None from this document |
 | 1 | After that, mint one read-only key per accounts-config entry (v1: Americas). Build the harness with the allow-list in code. Backup `openclaw.json`. Quiesce the live worker so it cannot claim or complete during the window. Confirm live model `baseUrl` is `http://127.0.0.1:11434`. Do not start a gateway on port 8788. | None |
 | 2 | Before-image: row counts and timestamp checksums (section 9). Save max `created_at` / max `id` on `pipeline_log`, `chain_operations`, `asset_write_ledger`, `login_events`, `email_log`, and `arm_agent_runtime_usage`. There is no table named `audit`. Also save `principals.last_briefing_version`, `last_briefing_at`, and `last_briefing_via` for the smoke principal. | None (SQL `SELECT` only) |
-| 3 | For each account, MCP `initialize`, then `tools/list`, with that account's key. Save the raw tool list. Abort if any claim, complete, post-message, put-pulse-head, or runtime-usage tool is advertised, or if any other mutator is advertised. **`tools/list` has not been run yet.** If Todd has not allowed an `initialize` exception, abort when `last_briefing_*` moved. | Presence lease and last-seen for that principal. Allowed (decision 2). `last_briefing_*` is allowed only if Todd has approved that exception. |
+| 3 | For each account, MCP `initialize`, then `tools/list`, with that account's key. Save the raw tool list. Abort if any claim, complete, post-message, put-pulse-head, or runtime-usage tool is advertised, or if any other mutator is advertised. **`tools/list` has not been run yet.** Abort if `last_briefing_*`, a counter, runtime usage, or status moved on `initialize`, or if that handshake started processing. | One server-generated last-seen timestamp on the handshake (decision 5). Later calls follow decision 2. |
 | 4 | Allow-listed reads only, sequential, into that account's `snapshot.jsonl`. Then no further ARM RPC for that account. | Same allowed soft write per call. Any other write fails the run. |
-| 5 | Mid-image: repeat step 2. Diff against the before-image. Abort the model step unless every delta is on the decision 2 allow-list, plus `last_briefing_*` only when Todd has approved that exception. | None |
+| 5 | Mid-image: repeat step 2. Diff against the before-image. Abort the model step unless every delta is on the decision 2 allow-list, with the handshake limited to decision 5. A `last_briefing_*` change fails. | None |
 | 6 | Choose the sample (section 8). Build prompts from the JSONL files only. | None |
 | 7 | Model calls through the smoke console route (`ollamaFetch`), tools omitted. Cap volume so the ring keeps the run. Live agent `baseUrl` unchanged. | None |
 | 8 | Local hallucination check. Write per-account result sections and the rollup. | None |
@@ -922,18 +922,19 @@ If a claim was accidentally taken, the kill switch does **not** complete the wor
 
 ## 11. Open questions
 
-Resolved on 2026-10-05 by Todd Siena and removed from this list: the intent to use a dedicated key (decision 1), the presence lease and last-seen soft write (decision 2), the scoped ops-console exception (decision 3), and Americas-only v1 with a config-driven account list (decision 4). The path those decisions select is the option B harness. A/B/C is not an open choice for this run. Decision 2 is not reopened by this edit. The new blocker is that today's envelope, as reported, has no read-only level to mint.
+Resolved on 2026-10-05 by Todd Siena and removed from this list: the intent to use a dedicated key (decision 1), the presence lease and last-seen soft write (decision 2), the scoped ops-console exception (decision 3), Americas-only v1 with a config-driven account list (decision 4), and the handshake (decision 5). The path those decisions select is the option B harness. A/B/C is not an open choice for this run. Decision 2 is not reopened by this edit. The blocker that remains is that today's envelope, as reported, has no read-only level to mint.
+
+**Handshake, decided, not open.** Decision 5 allows one server-generated last-seen timestamp on `initialize`, and only that. No `last_briefing_*` content, no counters, no runtime usage, no status, and no processing. It matches the cloud session "PLAN: ARM real read-only level spec (not L0 alias)" on `Block-Aero/block-aero-ai-records-manager`. <!-- pragma: allowlist secret -->
 
 Still open:
 
-1. **For Todd. Blocks `initialize`.** `deploy/AGENT_RUNTIME.md` is reported to say the MCP `initialize` handshake may update `principals.last_briefing_*`. Decision 2 forbids those columns from moving, and `initialize` is the first ARM call. This session could not open `app/routers/mcp.py`. Choose one: an ARM change so a read-only principal's `initialize` does not write those columns, or an explicit exception you approve for `initialize` only. Until you choose, the smoke does not send `initialize`.
-2. Moondream on document page images in v1, or text-only Qwen? The plan skips Moondream. Page bytes are a `gcs_uri`, not a column of bytes. Whether a skip fails v1 is unanswered.
-3. Pass thresholds you have not set: max records and max wall time. The plan caps the model sample at 20 calls per account and 25 per run so the TV ring can hold them, and does not require full-table coverage.
-4. **Unverified.** Live `tools/list` was not run. Argument names, pagination cursors, rate limits, and whether `registry_insights` is the exact tool name are unknown until the harness precheck. `factory_jobs.mcp_smoke_tools` had no stored list to copy. `app/principal_envelope.py` was not readable here (repo 404), so the v1 names are still the doc-derived set.
-5. **Unverified.** Which MCP tool, if any, returns BTB, certificate, or `ocr_artifacts.page_texts`? The tables exist. `get_briefing` is intentionally not in v1.
-6. **Unverified.** Is `127.0.0.1:11434` on the MSI the RTX Ollama or a forwarder?
-7. Should `chat_messages` stay excluded for v1? The plan excludes them.
-8. **Reported, not verified here.** Confirm on the MSI that the live secret is `ARM_MCP_PIN` and that `openclaw.json` does not also store the pin literal. Confirm whether `openclaw_mcp_gateway` is installed and whether anything besides the Ops console is bound to port 8788.
+1. Moondream on document page images in v1, or text-only Qwen? The plan skips Moondream. Page bytes are a `gcs_uri`, not a column of bytes. Whether a skip fails v1 is unanswered.
+2. Pass thresholds you have not set: max records and max wall time. The plan caps the model sample at 20 calls per account and 25 per run so the TV ring can hold them, and does not require full-table coverage.
+3. **Unverified.** Live `tools/list` was not run. Argument names, pagination cursors, rate limits, and whether `registry_insights` is the exact tool name are unknown until the harness precheck. `factory_jobs.mcp_smoke_tools` had no stored list to copy. `app/principal_envelope.py` was not readable here (repo 404), so the v1 names are still the doc-derived set.
+4. **Unverified.** Which MCP tool, if any, returns BTB, certificate, or `ocr_artifacts.page_texts`? The tables exist. `get_briefing` is intentionally not in v1.
+5. **Unverified.** Is `127.0.0.1:11434` on the MSI the RTX Ollama or a forwarder?
+6. Should `chat_messages` stay excluded for v1? The plan excludes them.
+7. **Reported, not verified here.** Confirm on the MSI that the live secret is `ARM_MCP_PIN` and that `openclaw.json` does not also store the pin literal. Confirm whether `openclaw_mcp_gateway` is installed and whether anything besides the Ops console is bound to port 8788.
 
 ## 12. Non-goals
 
@@ -948,7 +949,7 @@ Still open:
 
 **From PR #2 and PR #3.** This is the profile that comes after option B passes. It is still a plan. This section does not mint a key, call ARM, run `tools/list`, or edit OpenClaw, the console, Neon, or ARM.
 
-**Next step, unchanged (section 5).** Do not mint yet. ARM adds a real read-only level that is not an alias of L0. Ledger tools stay closed to bots. An unknown level is still treated as L0. That level also omits briefing writes, runtime-usage writes, and a no-processing mode (a read does not start Claude, OCR, classification, extraction, or an enqueue; a missing artifact comes back as stored text or a gap). Todd's handshake question in section 11 item 1 stays open, and `initialize` stays unsent until he answers it. Decision 2 is not edited. Receipts, a per-release manifest, a server kill flag, and principal stamps on log rows are required before an unattended standing reader, not before the smoke key.
+**Next step (section 5).** Do not mint yet. ARM adds a real read-only level that is not an alias of L0. Ledger tools stay closed to bots. An unknown level is still treated as L0. That level also omits briefing writes, runtime-usage writes, and a no-processing mode (a read does not start Claude, OCR, classification, extraction, or an enqueue; a missing artifact comes back as stored text or a gap). `initialize` for that level follows decision 5: one server-generated last-seen timestamp, and no other fields and no processing. Decision 2 is not edited. Receipts, a per-release manifest, a server kill flag, and principal stamps on log rows are required before an unattended standing reader, not before the smoke key.
 
 ### Where the two plans agree
 
@@ -961,7 +962,7 @@ State once:
 - Fail closed. The same error three times stops the run. No retry on 400, 401, 403, or 404. 429 and 503 wait 5 s, then 10 s, then 20 s, then halt. One request in flight. Caps stay the smoke caps: 10 pages per list, 200 records per tool, 32 MB of JSON per account.
 - `tools/list` must be a subset of the static allow-list. One extra name halts the run. The guard does not skip the bad tool and continue.
 - `initialize` declares no sampling. A server `sampling/createMessage` or `roots/list` is an error, then a halt. `notifications/tools/list_changed` drops permission and rechecks the catalog.
-- Decision 2 columns are the only tolerated writes until Todd says to suppress them (section 14). `initialize` stays blocked until section 11 item 1 is answered.
+- Decision 2 columns are the only tolerated writes on later calls, until Todd says to suppress them (section 14). The handshake is decision 5, not an open question: one server-generated last-seen timestamp, and no `last_briefing_*`, counters, runtime usage, status, or processing.
 - Log rows must be attributable to a principal before the reader runs beside the live worker. Until then, any new row in `pipeline_log`, `chain_operations`, `asset_write_ledger`, `login_events`, `email_log`, or `arm_agent_runtime_usage` fails the window, so the reader does not share a window with the worker.
 - Replay reads the sealed snapshot and does not call ARM. The TV ring is not the system of record.
 - Phase-2 tools, doc-derived only: `get_pulse_head`, `get_account_pulse` (not also the resource `arm://account/pulse`), `get_standing_playbook`, `get_deliverable_rollup`, `list_work_items`, `list_priority_part_lists`, `get_project_status`, and `registry_insights` only when that exact name is advertised. Do not invent names for trace, life limits, record text, asset records, or certificates. Those jobs stay off until a real `tools/list` entry is classified pure-read and added in a later revision. Opus listed placeholder names for them; those names are not verified and are not called.
@@ -1048,15 +1049,14 @@ The live `ARM_MCP_PIN` sitting in a user environment is out of scope to move. It
 
 ### What this section does not change
 
-- Decision 1, decision 2, decision 3, and decision 4, as written in the decisions block.
-- Section 5's next-step paragraph.
-- Section 11 item 1 (the `initialize` / `last_briefing_*` question).
+- Decision 1, decision 2, decision 3, and decision 4, as written in the decisions block. Decision 5 decides the handshake and does not replace decision 2.
+- The next step: the ARM read-only level, before any key is minted. The open handshake question is no longer part of that gate.
 - Option B as the smoke. `openclaw_mcp_exercised` stays false for that run.
 - The accounts example in section 5 (`key_env`: `ARM_SMOKE_PIN_AMERICAS`). The Credential Manager form is the standing reader, not a rewrite of that example.
 
 ## 14. Unresolved between Grok and Opus plans
 
-These items were not reconciled. Todd decides them. Section 11 item 1 is not in this list and is not reopened: either ARM skips `principals.last_briefing_*` on `initialize` for the read-only principal, or Todd approves an exception for `initialize` only. Until then, do not send `initialize`.
+These items were not reconciled. Todd decides them. The handshake is not in this list. It is decision 5: one server-generated last-seen timestamp on `initialize`, and no `last_briefing_*` content, counters, runtime usage, status, or processing.
 
 1. **`login_events`.** This plan and Grok fail the window on any new `login_events` row. Opus recommends allowing one attributed `login_events` row per session so ARM keeps login auditing. Pick one before the first session.
 2. **Decision 2 for the standing reader.** Both later plans ask whether ARM must suppress `principals.last_seen_at`, `principal_credentials.last_used_at`, and the `chat_run_leases` heartbeat for a true zero-write reader. This file does not change decision 2. The smoke and, until you say otherwise, the standing reader still tolerate exactly those columns. Say if the standing reader must suppress them too.
@@ -1065,3 +1065,16 @@ These items were not reconciled. Todd decides them. Section 11 item 1 is not in 
 5. **Proof object on a read result.** Grok wants `processing_enqueued: false` and `models_invoked: []` on every result (not in MCP 2025-03-26). Opus wants a per-call receipt in `result._meta` before unattended runs. Both sit after the mint gate. Pick the shape ARM will return.
 6. **Thresholds and the gap list.** Required document types for a gap report, expiry windows, aging buckets, phrasing pass rate, drift limit, and archive retention. Both plans left the numbers unset. Opus marked several as assumed (99% validator pass, five attended business days, two clean weeks, 90-day archive). Those assumptions are not approvals.
 7. **OpenClaw on the MSI versus the docs those plans cite.** Tool-group membership, `modelPolicy`, the `automations` CLI, whether MCP headers accept a SecretRef, and the `arm__` tool-id prefix. The installed build recorded in the MSI notes is `v2026.9.4`. Neither plan ran `openclaw doctor` on the laptop. Do not apply either profile until that check exists.
+
+## 15. Spawned threads
+
+These are separate plan/spec threads. They are not built in this file. None of them mint a key, call ARM, or merge to `main`. Each one links back to [PR #1](https://github.com/blockaero/openclaw-console/pull/1). Decision 5 applies to all of them.
+
+| Thread | Why it was split out | Where |
+|---|---|---|
+| ARM read-only level | The server change belongs in the ARM repo. A session for that spec already exists, so this plan does not open a second one. The next step in section 5 is that level. | Cloud session "PLAN: ARM real read-only level spec (not L0 alias)" on `Block-Aero/block-aero-ai-records-manager`. <!-- pragma: allowlist secret --> |
+| Read-only guard | The loopback process that holds the key and forwards only certified reads is its own build, after the level exists. | Branch `cursor/arm-ro-guard-spec-7095`, draft PR against this branch. |
+| Independent auditor | The Neon `SELECT` diff, quarantine, and late audit are a separate process from the guard. | Branch `cursor/arm-ro-auditor-spec-7095`, draft PR against this branch. |
+| CI write-traps | The certification ladder (declare, review, write-trap, branch diff, canary) is ARM CI work, not this smoke. | Branch `cursor/arm-ro-ci-write-traps-7095`, draft PR against this branch. |
+| Allow-list check once `tools/list` exists | The procedure for comparing the static list to a future live `tools/list`. This plan does not run that call. | Branch `cursor/arm-ro-tools-list-verify-7095`, draft PR against this branch. |
+| Phase-3 read tools | Trace, expiry, and existing OCR text need real ARM tools. Names are not invented here. | Branch `cursor/arm-ro-phase3-tools-7095`, draft PR against this branch. |
