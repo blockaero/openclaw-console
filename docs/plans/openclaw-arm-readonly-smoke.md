@@ -600,7 +600,7 @@ result
       checksum_before, checksum_after, checksum_column
     unexpected_deltas       { table, what_changed }[]
     audit
-      table                 string | null     name still unverified
+      table                 null             no table is named audit; see section 2a logs
       new_rows              number
       status                "clean" | "changed" | "no_audit_table_use_pipeline_and_chain_logs"
     forbidden_tools_invoked string[]
@@ -774,7 +774,7 @@ The smoke pin is an allow-list on the server. The harness copies that as a secon
 
 **Schema-verified in section 2a.** The caller's last-seen is `principals.last_seen_at` and `principal_credentials.last_used_at`. A presence row is `chat_run_leases` for that `principal_id`. `get_briefing` is off the v1 call list because `principals.last_briefing_*` would be a different write. Pulse etag/delta can still move something else; the mid-image diff classifies it. A mark-read, a `pipeline_log` insert, or any business-column change fails the run, and that tool comes off the allow-list before any retry.
 
-**Doc-derived.** `report_runtime_usage` writes a COGS row when tokens are greater than zero. Token totals stay in `result.json` only.
+**Doc-derived call, schema-verified table.** `report_runtime_usage` is still the doc-derived name. The COGS table is `arm_agent_runtime_usage`. A new row there fails the run. Token totals stay in `result.json` only.
 
 ### Pin scope
 
