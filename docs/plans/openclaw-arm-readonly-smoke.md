@@ -1,6 +1,26 @@
 # OpenClaw read-only smoke test against ARM
 
-Status: plan only. Todd Siena approved the four gates on 2026-10-05. This document does not change application code, OpenClaw config, the MSI Ops console, Neon, or ARM. No ARM or platform API was called while writing it, and `tools/list` was not called. Minting a key is blocked until ARM has a real read-only role or level (section 2b). This pull request does not mint a key and does not make that server change.
+Status: plan only. Todd Siena approved the four gates on 2026-10-05. This document does not change application code, OpenClaw config, the MSI Ops console, Neon, or ARM. No ARM or platform API was called while writing it, and `tools/list` was not called. Minting a key is blocked until ARM has a real read-only role or level (section 2b). This pull request does not mint a key and does not make that server change. It does not merge to `main`, and it does not merge [PR #2](https://github.com/blockaero/openclaw-console/pull/2) or [PR #3](https://github.com/blockaero/openclaw-console/pull/3).
+
+## Guiding principle
+
+The goal is a predictable system. Predictability comes from determinism wherever it is possible:
+
+- Code-enforced allow-lists, not prompt rules.
+- Fixed routing tables. The model does not pick the model, the tool, the account, or the next state.
+- Pinned models with fixed sampling: temperature 0, a seed recorded in the run manifest, thinking off.
+- Idempotent, replayable runs. The same sealed snapshot and the same slot time produce the same facts.
+- Explicit state machines. Every transition has an owner and a failure exit.
+- Model judgment only where determinism is impossible: phrasing a digest the code already computed. That call is logged. If validation fails, a code template replaces the model text.
+
+This principle settles the disagreements between the two later plans. Where they agree, this file states it once. Where they differ, the more deterministic and safer option is the recommendation, and the other option is recorded beside it. Anything that could not be settled is in section 14.
+
+**Sources, read from git on 2026-10-05, not re-checked against ARM, the MSI, or Neon:**
+
+- [PR #2](https://github.com/blockaero/openclaw-console/pull/2) — Grok 4.7, branch `cursor/openclaw-readonly-config-grok-18d8`, file `docs/plans/openclaw-readonly-config-grok.md`.
+- [PR #3](https://github.com/blockaero/openclaw-console/pull/3) — Opus 5.5, branch `cursor/openclaw-readonly-config-plan-ab6e`, file `docs/plans/openclaw-readonly-config-opus.md`.
+
+The standing-reader design those two plans describe is section 13. It comes after option B. It does not replace the smoke, and it does not change section 5's next step, decision 2, or the handshake question in section 11.
 
 The smoke test answers one question: can a basic read of records already in ARM be turned into local model output, with the call visible on the TV, without granting operating rights and without business writes beyond the accepted presence lease and last-seen update.
 
@@ -29,6 +49,7 @@ Three labels are used on every factual claim:
 | **Reported, not verified here** | From Todd's 2026-10-05 read-only review of `github.com/Block-Aero/block-aero-ai-records-manager`. This session got HTTP 404 for that repo from both `gh` and the GitHub API, so no line citations. | <!-- pragma: allowlist secret -->
 | **Assumed** | Planning inference. Not confirmed. |
 | **Published model card** | Public Ollama / Hugging Face figures. Not measured on the RTX or MSI Ollama. |
+| **From PR #2 or PR #3** | Stated in those plans and read from git for section 13. Not re-verified against ARM, the MSI, or Neon in this edit. |
 
 ## 2. What was verified in this repo
 
@@ -333,7 +354,7 @@ A live MCP pass (option A) is a later program. Folding A into the same run as B 
 
 **Build and run B after the blocker in section 2b clears.** Decisions 1–4 stay approved. The next step is not minting. ARM first needs a read-only role or level whose `tools/list` omits claim, complete, post message, put pulse head, and runtime-usage reporting. Todd also has to answer whether `initialize` may touch `principals.last_briefing_*` (section 11). Until both are done, do not mint and do not send `initialize`. The harness, when it is built, enforces the allow-list in code. The lease and last-seen update stay the only accepted soft writes (decision 2). Model calls go through the console harness route (decision 3), not through a second process on port 8788. The live agent `baseUrl` stays `http://127.0.0.1:11434`.
 
-C is the follow-up program after B passes. A is not scheduled.
+C is the follow-up program after B passes. A is not scheduled. The reconciled shape of that later profile is section 13.
 
 ## 5. Prerequisites and next step
 
@@ -921,3 +942,126 @@ Still open:
 - No operating rights, no claim/complete, no `report_runtime_usage`, no ledger or form or offer actions.
 - No use of `deepseek-r1:14b` in v1.
 - No cloud model.
+- No merge of this branch to `main`, and no merge of PR #2 or PR #3.
+
+## 13. Reconciled standing reader
+
+**From PR #2 and PR #3.** This is the profile that comes after option B passes. It is still a plan. This section does not mint a key, call ARM, run `tools/list`, or edit OpenClaw, the console, Neon, or ARM.
+
+**Next step, unchanged (section 5).** Do not mint yet. ARM adds a real read-only level that is not an alias of L0. Ledger tools stay closed to bots. An unknown level is still treated as L0. That level also omits briefing writes, runtime-usage writes, and a no-processing mode (a read does not start Claude, OCR, classification, extraction, or an enqueue; a missing artifact comes back as stored text or a gap). Todd's handshake question in section 11 item 1 stays open, and `initialize` stays unsent until he answers it. Decision 2 is not edited. Receipts, a per-release manifest, a server kill flag, and principal stamps on log rows are required before an unattended standing reader, not before the smoke key.
+
+### Where the two plans agree
+
+State once:
+
+- The live worker (`main`) stays on `ARM_MCP_PIN` and on `baseUrl` `http://127.0.0.1:11434`. Do not reconfigure it. Do not start ARM's `openclaw_mcp_gateway` on port 8788.
+- There is no shared ARM client. One local guard is the only process that holds the read-only key and talks to `https://agentic-records-manager.com/mcp`. If the guard is down, nothing falls through to ARM.
+- Code owns the tool, the account, the state, and the counts. The model only narrates, with tools omitted. Output is JSON plus a citation check. A prompt is not a control.
+- `get_briefing` stays off. No `report_runtime_usage`. No GCS fetch. No Moondream in v1. No `deepseek-r1`. No cloud model in v1.
+- Fail closed. The same error three times stops the run. No retry on 400, 401, 403, or 404. 429 and 503 wait 5 s, then 10 s, then 20 s, then halt. One request in flight. Caps stay the smoke caps: 10 pages per list, 200 records per tool, 32 MB of JSON per account.
+- `tools/list` must be a subset of the static allow-list. One extra name halts the run. The guard does not skip the bad tool and continue.
+- `initialize` declares no sampling. A server `sampling/createMessage` or `roots/list` is an error, then a halt. `notifications/tools/list_changed` drops permission and rechecks the catalog.
+- Decision 2 columns are the only tolerated writes until Todd says to suppress them (section 14). `initialize` stays blocked until section 11 item 1 is answered.
+- Log rows must be attributable to a principal before the reader runs beside the live worker. Until then, any new row in `pipeline_log`, `chain_operations`, `asset_write_ledger`, `login_events`, `email_log`, or `arm_agent_runtime_usage` fails the window, so the reader does not share a window with the worker.
+- Replay reads the sealed snapshot and does not call ARM. The TV ring is not the system of record.
+- Phase-2 tools, doc-derived only: `get_pulse_head`, `get_account_pulse` (not also the resource `arm://account/pulse`), `get_standing_playbook`, `get_deliverable_rollup`, `list_work_items`, `list_priority_part_lists`, `get_project_status`, and `registry_insights` only when that exact name is advertised. Do not invent names for trace, life limits, record text, asset records, or certificates. Those jobs stay off until a real `tools/list` entry is classified pure-read and added in a later revision. Opus listed placeholder names for them; those names are not verified and are not called.
+
+### Recommendation
+
+Take Opus's split. A model that can call tools is a less deterministic system, even with a second lock in front of it.
+
+| Component | Windows user | Listens | Holds | Talks to |
+|---|---|---|---|---|
+| Live gateway, unchanged | Todd's user | `127.0.0.1:18789` | `ARM_MCP_PIN` | ARM, Ollama |
+| Read-only OpenClaw profile `arm-ro` | `svc-armro-agent` | `127.0.0.1:19789` | a local guard token only | the guard, Ollama |
+| ARM read guard, new, in this repo | `svc-armro-guard` | `127.0.0.1:18950` | one read-only key per account, in that user's Credential Manager | ARM `/mcp` |
+| Auditor, new, in this repo | `svc-armro-audit` | `127.0.0.1:18951` | a Neon `SELECT` role only | Neon |
+| Ollama, unchanged | existing | `127.0.0.1:11434` | models | — |
+| Ops console, unchanged for this profile | existing | `:8788` | the smoke ring | Ollama |
+
+Rules:
+
+- The `arm-ro` profile has no `mcp.servers` entry for ARM, no ARM URL, and no ARM key. Its effective tool list is empty. A policy plugin blocks every tool call and alerts. Heartbeats are off, because an OpenClaw heartbeat is a full agent turn.
+- Jobs are command jobs (`--exact`, `America/Los_Angeles`, no catch-up). The slot time is "now". The run id is `job:account:slot`. A missed slot is logged and not replayed.
+- The guard is the only ARM client. It accepts loopback calls that carry the guard token. It forwards only certified reads. Node is the suggested language, because the console is Node. That is a note, not a build.
+- The auditor is the only process with database access. It holds no ARM key. The guard holds no Neon credential.
+- Ports 19789, 18950, and 18951 are assumed free. Confirm on the MSI before any process exists. Never bind 8788. Never bind the read-only gateway on 18789.
+
+**Alternative (Grok).** One OpenClaw agent `arm-reader` on the existing gateway `:18789`, with `tools.allow` of prefixed MCP tools (`arm__<tool>`, assumed until `openclaw doctor` prints the real ids), a `before_tool_call` allow-list, and a guard on `127.0.0.1:18790` that holds the pin. Keep that design as the later option if a tool-using agent is ever reviewed on its own. It is not the recommendation. A heartbeat on that agent, even with `target: none` and a model call only when the diff is non-empty, is the alternative to command jobs.
+
+### State machine
+
+One machine. Model only in `PHRASE`. An unchanged etag skips the model and skips every ARM call after the etag check. Replay never calls ARM. Facts must be byte-stable. Phrasing drift is logged. It is not a halt unless Todd sets a threshold (section 14).
+
+| State | Who | Exit |
+|---|---|---|
+| `HALTED` | A human deletes the halt file | `PRECHECK` |
+| `PRECHECK` | Guard and auditor | Kill and halt clear, version gate matches, `tools/list` is a subset, baseline audit clean. Else `HALTED`. |
+| `FETCH` | Fixed tool order, one RPC in flight | `SEAL`, or `HALTED` on a violation |
+| `SEAL` | Code | Snapshot hash matches the guard log. Else `HALTED`. |
+| `AUDIT_MID` | Auditor | Only decision 2 columns for this principal. Else `HALTED`. If the auditor cannot finish, quarantine. Do not treat that as clean. |
+| `COMPUTE` | Code | `facts.json`. No model. |
+| `PHRASE` | Routing table, only if phrasing is enabled for this job and the snapshot changed | Else `RENDER`. |
+| `VALIDATE` | Schema, fact check, repetition check | Fail → `RENDER`. |
+| `RENDER` | Code template from `facts.json` | `EMIT` |
+| `EMIT` | Archive | `AUDIT_POST` |
+| `AUDIT_POST` | Auditor | No new ARM delta from the model step. Else `HALTED`. |
+| `COMMIT` | Code | `DONE` marker. Then `IDLE`. |
+| `LATE_AUDIT` | Auditor, 15 minutes later | A late processing row retracts the output and halts. |
+
+Phase 2 ships template-only (`RENDER`, no `PHRASE`) until a fixture eval passes. Grok's shorter machine (`SNAPSHOT` → `DIFF` → `NARRATE` only on change → `IDLE`) is the same idea with fewer states. The late audit is the addition worth keeping, because ARM's Claude path can land after the window.
+
+### Model routing for the standing reader
+
+The smoke in section 8 still uses `qwen3:14b` as its one-shot sample, through the console, under decision 3. That budget is not the standing reader's budget.
+
+**Recommendation.** Standing narration is `qwen3:8b` only. Temperature 0, seed `7` (recorded in the manifest; Grok's seed `20261005` is the alternative), thinking false, `num_ctx` 8192, `num_predict` 600, JSON schema on the request. Pin the digest from Ollama `/api/tags`. A digest mismatch uses the template and alerts. Empty diff or unchanged etag: no model call. Validator failure: code template, not a second model. Opus's estimate, unmeasured here: 8b at 8192 is about 6.9 GB, so it can sit beside moondream if the live agent keeps that loaded. 14b at 8192 does not fit a 12 GB card, and 14b plus moondream does not fit. The check on the box is `ollama ps` with `size_vram` equal to `size` (Grok's wording of the same check is "100% GPU"). Do not change `OLLAMA_NUM_PARALLEL`, `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_KV_CACHE_TYPE`, or `OLLAMA_NO_CLOUD`. Those are server-wide and would affect the worker. Grok's request to set `OLLAMA_NO_CLOUD` stays an alternative Todd would have to accept.
+
+**Alternative (Grok).** Status, gap, and Q&A on `qwen3:14b` at `num_ctx` 4096, and `qwen3:8b` only for a non-empty heartbeat diff or when 14b is not fully on GPU. Use that row only if an eval shows 8b failing the validator, and only alone, with `keep_alive` 0 afterward.
+
+`deepseek-r1:14b`, moondream, and any cloud `hard_judgment` row stay off for v1.
+
+### Allow-list phases
+
+A tool becomes callable only after both of these, which the two plans described separately and which stack:
+
+1. Opus's ladder. C0: declare the side-effect class. C1: review. C2: a CI write-trap, including `SET TRANSACTION READ ONLY` and traps for the provider path. C3: a Neon-branch diff. C4: an attended canary, which is this file's option B. C5: a receipt and an audit on every later run.
+2. Grok's fail-closed subset check. Any `tools/list` name outside the static list halts the system.
+
+Phase 2 jobs use only the doc-derived status tools above, attended, template-only, in a quiet window (the worker's ARM path disconnected). Phase 3 trace, expiry, OCR text, and gap lookups wait for a real pure-read tool. Unattended runs wait until log rows carry a principal, receipts exist, a per-release manifest exists, and a server kill flag exists. That is Grok's "beside the worker" phase and Opus's unattended phase, stated once.
+
+### Secrets
+
+**Recommendation (Opus).** The long-lived read-only key is never a Windows user environment variable. A user variable is inherited by every process of that user, including the live worker's shell, browser, and ADB skills. Store it in `svc-armro-guard`'s Credential Manager (DPAPI for that user). `svc-armro-agent` holds only the local guard token. `svc-armro-audit` holds only the Neon `SELECT` role. The accounts-list entry stays one ref per account (decision 4). For the standing reader the ref is a Credential Manager target, for example `credman:armro/block-aero-americas-nap8`. The smoke harness in section 5 may still use a process environment variable named by `key_env` (`ARM_SMOKE_PIN_AMERICAS`) for the one-shot window. That variable is not a user-level variable and is not `ARM_MCP_PIN`.
+
+**Alternative (Grok).** An environment variable only on the guard's scheduled task (`ARM_READONLY_PIN_AMERICAS`), plus a startup hash check that the gateway process does not contain it and that the hash differs from `ARM_MCP_PIN`.
+
+The live `ARM_MCP_PIN` sitting in a user environment is out of scope to move. It remains a residual risk on the same laptop.
+
+### Idempotency, kill switch, and archive
+
+- Unchanged etag: no model call, and no further ARM calls after the etag check.
+- Replay never calls ARM. Facts are byte-stable. Phrasing differences are drift, logged.
+- Halt file defaults to stopped until a human enables the reader. A human clears a halt. Nothing auto-restarts.
+- Kill switch, after the after-image: stop the guard, stop the read-only gateway task, leave the halt file, revoke the read-only key outside the diff window, leave `ARM_MCP_PIN`, confirm the worker `baseUrl` is still `http://127.0.0.1:11434`. Do not complete a claimed work item.
+- The archive on the MSI is the record (`manifest`, state log, sealed snapshot, `facts.json`, model-call log, audit, `DONE` or `HALTED`). Decision 3's console capture stays the smoke path. Pointing standing-reader model calls at port 8788 is section 14.
+
+### What this section does not change
+
+- Decision 1, decision 2, decision 3, and decision 4, as written in the decisions block.
+- Section 5's next-step paragraph.
+- Section 11 item 1 (the `initialize` / `last_briefing_*` question).
+- Option B as the smoke. `openclaw_mcp_exercised` stays false for that run.
+- The accounts example in section 5 (`key_env`: `ARM_SMOKE_PIN_AMERICAS`). The Credential Manager form is the standing reader, not a rewrite of that example.
+
+## 14. Unresolved between Grok and Opus plans
+
+These items were not reconciled. Todd decides them. Section 11 item 1 is not in this list and is not reopened: either ARM skips `principals.last_briefing_*` on `initialize` for the read-only principal, or Todd approves an exception for `initialize` only. Until then, do not send `initialize`.
+
+1. **`login_events`.** This plan and Grok fail the window on any new `login_events` row. Opus recommends allowing one attributed `login_events` row per session so ARM keeps login auditing. Pick one before the first session.
+2. **Decision 2 for the standing reader.** Both later plans ask whether ARM must suppress `principals.last_seen_at`, `principal_credentials.last_used_at`, and the `chat_run_leases` heartbeat for a true zero-write reader. This file does not change decision 2. The smoke and, until you say otherwise, the standing reader still tolerate exactly those columns. Say if the standing reader must suppress them too.
+3. **Key-ref form.** Decision 4 says the accounts entry names an environment variable. Opus stores the long-lived key in Credential Manager (`key_ref`). Grok uses a task env var (`ARM_READONLY_PIN_AMERICAS`). The recommendation in section 13 is Credential Manager for the long-lived key, without rewriting the smoke example. Confirm that decision 4 may name a Credential Manager target, and set the key lifetime. Opus assumed 90 days. Grok did not set one.
+4. **Decision 3 for standing routines.** Opus recommends sending standing-reader model calls, and a runs index, through the Ops console. Grok treats decision 3 as smoke-only and treats the archive as the record. The recommendation is: the archive is authoritative, and console capture stays the smoke exception until you extend decision 3.
+5. **Proof object on a read result.** Grok wants `processing_enqueued: false` and `models_invoked: []` on every result (not in MCP 2025-03-26). Opus wants a per-call receipt in `result._meta` before unattended runs. Both sit after the mint gate. Pick the shape ARM will return.
+6. **Thresholds and the gap list.** Required document types for a gap report, expiry windows, aging buckets, phrasing pass rate, drift limit, and archive retention. Both plans left the numbers unset. Opus marked several as assumed (99% validator pass, five attended business days, two clean weeks, 90-day archive). Those assumptions are not approvals.
+7. **OpenClaw on the MSI versus the docs those plans cite.** Tool-group membership, `modelPolicy`, the `automations` CLI, whether MCP headers accept a SecretRef, and the `arm__` tool-id prefix. The installed build recorded in the MSI notes is `v2026.9.4`. Neither plan ran `openclaw doctor` on the laptop. Do not apply either profile until that check exists.
