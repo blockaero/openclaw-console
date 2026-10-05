@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenClaw read-only ARM smoke</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    a { color: #0b3d91; }
+    code { font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <h1>OpenClaw read-only ARM smoke</h1>
+  <p>This site is the published copy of the plan and the local scaffold. It does not connect to ARM, does not mint a key, and does not send <code>tools/list</code> or <code>tools/call</code>.</p>
+  <p>The smoke stays blocked until ARM ships a real read-only level. <code>initialize</code> may write one server-generated last-seen timestamp, and nothing else. The production ARM URL is refused by the scaffold.</p>
+  <ul>
+    <li><a href="https://github.com/blockaero/openclaw-console/blob/main/docs/plans/openclaw-arm-readonly-smoke.md">Smoke plan</a></li>
+    <li><a href="https://github.com/blockaero/openclaw-console/blob/main/docs/plans/arm-ro-guard-spec.md">Guard spec</a></li>
+    <li><a href="https://github.com/blockaero/openclaw-console/blob/main/docs/plans/arm-ro-auditor-spec.md">Auditor spec</a></li>
+    <li><a href="https://github.com/blockaero/openclaw-console/blob/main/docs/plans/arm-ro-ci-write-traps.md">CI write-trap spec</a></li>
+    <li><a href="https://github.com/blockaero/openclaw-console/blob/main/docs/plans/arm-ro-tools-list-verify.md">tools/list check</a></li>
+    <li><a href="https://github.com/blockaero/openclaw-console/blob/main/docs/plans/arm-ro-phase3-tools.md">Phase-3 tool requirements</a></li>
+    <li><a href="https://github.com/blockaero/openclaw-console/blob/main/docs/smoke-after-arm.md">How the smoke runs after the ARM level exists</a></li>
+  </ul>
+</body>
+</html>
